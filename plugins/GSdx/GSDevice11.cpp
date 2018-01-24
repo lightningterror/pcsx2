@@ -343,6 +343,24 @@ bool GSDevice11::Create(const std::shared_ptr<GSWnd> &wnd)
 
 	//
 
+	memset(&sd, 0, sizeof(sd));
+
+	sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+	sd.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+	sd.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+	sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+	sd.MinLOD = -FLT_MAX;
+	sd.MaxLOD = FLT_MAX;
+	sd.ComparisonFunc = D3D11_COMPARISON_NEVER;
+
+	hr = m_dev->CreateSamplerState(&sd, &m_convert.pt);
+
+	sd.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+
+	hr = m_dev->CreateSamplerState(&sd, &m_convert.ch);
+
+	//
+
 	Reset(1, 1);
 
 	//

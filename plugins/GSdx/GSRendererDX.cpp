@@ -321,12 +321,49 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 				m_channel_shuffle = false;
 			}
 		} else if (m_context->CLAMP.WMS == 3 && ((m_context->CLAMP.MAXU & 0x8) == 8)) {
-			;
+			// Read either blue or Alpha. Let's go for Blue ;)
+			// MGS3/Kill Zone
+			m_ps_sel.channel = 3;
 		} else if (m_context->CLAMP.WMS == 3 && ((m_context->CLAMP.MINU & 0x8) == 0)) {
-			;
+			// Read either Red or Green. Let's check the V coordinate. 0-1 is likely top so
+			// red. 2-3 is likely bottom so green (actually depends on texture base pointer offset)
+			bool green = PRIM->FST && (m_vertex.buff[0].V & 32);
+			if (green && (m_context->FRAME.FBMSK & 0x00FFFFFF) == 0x00FFFFFF) {
+				// Typically used in Terminator 3
+				;
+			} else if (green) {
+				m_ps_sel.channel = 2;
+			} else {
+				// Pop
+				m_ps_sel.channel = 1;
+			}
 		} else {
 			m_channel_shuffle = false;
 		}
+	}
+
+	// Effect is really a channel shuffle effect so let's cheat a little
+	if (m_channel_shuffle) {
+		dev->PSSetShaderResource(3, tex->m_from_target);
+
+		// Replace current draw with a fullscreen sprite
+		//
+		// Performance GPU note: it could be wise to reduce the size to
+		// the rendered size of the framebuffer
+
+		GSVertex* s = &m_vertex.buff[0];
+		s[0].XYZ.X = (uint16)(m_context->XYOFFSET.OFX + 0);
+		s[1].XYZ.X = (uint16)(m_context->XYOFFSET.OFX + 16384);
+		s[0].XYZ.Y = (uint16)(m_context->XYOFFSET.OFY + 0);
+		s[1].XYZ.Y = (uint16)(m_context->XYOFFSET.OFY + 16384);
+
+		m_vertex.head = m_vertex.tail = m_vertex.next = 2;
+		m_index.tail = 2;
+
+	} else {
+#ifdef _DEBUG
+		dev->PSSetShaderResource(3, NULL);
+#endif
 	}
 
 	// Upscaling hack to avoid various line/grid issues
@@ -468,8 +505,6 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 		// Read texture is 8 to 16 pixels (same as above)
 		int tex_pos = v[0].U & 0xFF;
 		m_ps_sel.read_ba = (tex_pos > 112 && tex_pos < 144);
-
-		GL_INS("Color shuffle %s => %s", m_ps_sel.read_ba ? "BA" : "RG", write_ba ? "BA" : "RG");
 
 		// Convert the vertex info to a 32 bits color format equivalent
 		for (size_t i = 0; i < count; i += 2) {
@@ -635,8 +670,8 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 	}
 
 	// rs
-
-	GSVector4i scissor = GSVector4i(GSVector4(rtscale).xyxy() * m_context->scissor.in).rintersect(GSVector4i(rtsize).zwxy());
+	const GSVector4& hacked_scissor = m_channel_shuffle ? GSVector4(0, 0, 1024, 1024) : m_context->scissor.in;
+	GSVector4i scissor = GSVector4i(GSVector4(rtscale).xyxy() * hacked_scissor).rintersect(GSVector4i(rtsize).zwxy());
 
 	dev->OMSetRenderTargets(rt, ds, &scissor);
 	dev->PSSetShaderResource(0, tex ? tex->m_texture : NULL);

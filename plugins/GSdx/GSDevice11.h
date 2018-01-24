@@ -100,6 +100,7 @@ public: // TODO
 		CComPtr<ID3D11VertexShader> vs;
 		CComPtr<ID3D11PixelShader> ps[10];
 		CComPtr<ID3D11SamplerState> ln;
+		CComPtr<ID3D11SamplerState> ch;
 		CComPtr<ID3D11SamplerState> pt;
 		CComPtr<ID3D11DepthStencilState> dss;
 		CComPtr<ID3D11BlendState> bs;

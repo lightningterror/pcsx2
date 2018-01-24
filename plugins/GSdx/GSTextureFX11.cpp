@@ -209,7 +209,7 @@ void GSDevice11::SetupPS(PSSelector sel, const PSConstantBuffer* cb, PSSamplerSe
 
 	if(i == m_ps.end())
 	{
-		std::string str[21];
+		std::string str[22];
 
 		str[0] = format("%d", sel.fst);
 		str[1] = format("%d", sel.wms);
@@ -229,9 +229,10 @@ void GSDevice11::SetupPS(PSSelector sel, const PSConstantBuffer* cb, PSSamplerSe
 		str[15] = format("%d", sel.spritehack);
 		str[16] = format("%d", sel.tcoffsethack);
 		str[17] = format("%d", sel.point_sampler);
-		str[18] = format("%d", sel.shuffle);
-		str[19] = format("%d", sel.read_ba);
-		str[20] = format("%d", sel.fmt >> 2);
+		str[18] = format("%d", sel.channel);
+		str[19] = format("%d", sel.shuffle);
+		str[20] = format("%d", sel.read_ba);
+		str[21] = format("%d", sel.fmt >> 2);
 
 		D3D_SHADER_MACRO macro[] =
 		{
@@ -253,9 +254,10 @@ void GSDevice11::SetupPS(PSSelector sel, const PSConstantBuffer* cb, PSSamplerSe
 			{"PS_SPRITEHACK", str[15].c_str()},
 			{"PS_TCOFFSETHACK", str[16].c_str()},
 			{"PS_POINT_SAMPLER", str[17].c_str()},
-			{"PS_SHUFFLE", str[18].c_str() },
-			{"PS_READ_BA", str[19].c_str() },
-			{"PS_PAL_FMT", str[20].c_str() },
+			{"PS_CHANNEL_FETCH", str[18].c_str() },
+			{"PS_SHUFFLE", str[19].c_str() },
+			{"PS_READ_BA", str[20].c_str() },
+			{"PS_PAL_FMT", str[21].c_str() },
 			{NULL, NULL},
 		};
 
