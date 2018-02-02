@@ -228,28 +228,28 @@ float4 ps_params[7];
 float4 fetch_red(int2 xy)
 {
 	float4 rt = fetch_raw_color(int2(input.p.xy));
-	return sample_p(rt.r) * 255.0f;
+	return sample_p(rt.r);
 }
 
 // Channel 2
 float4 fetch_green(int2 xy)
 {
 	float4 rt = fetch_raw_color(int2(input.p.xy));
-	return sample_p(rt.g) * 255.0f;
+	return sample_p(rt.g);
 }
 
 // Channel 3
 float4 fetch_blue(int2 xy)
 {
 	float4 rt = fetch_raw_color(int2(input.p.xy));
-	return sample_p(rt.b) * 255.0f;
+	return sample_p(rt.b);
 }
 
 // Channel 4
 float4 fetch_alpha(int2 xy)
 {
 	float4 rt = fetch_raw_color(int2(input.p.xy));
-	return sample_p(rt.a) * 255.0f;
+	return sample_p(rt.a);
 }
 #endif
 

@@ -343,7 +343,7 @@ bool GSDevice11::Create(const std::shared_ptr<GSWnd> &wnd)
 
 	//
 
-	memset(&sd, 0, sizeof(sd));
+	/*memset(&sd, 0, sizeof(sd));
 
 	sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
 	sd.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
@@ -359,7 +359,7 @@ bool GSDevice11::Create(const std::shared_ptr<GSWnd> &wnd)
 
 	hr = m_dev->CreateSamplerState(&sd, &m_convert.ch);
 
-	//
+	//*/
 
 	Reset(1, 1);
 
