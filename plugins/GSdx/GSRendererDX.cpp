@@ -455,6 +455,10 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 	size_t count = m_vertex.next;
 	GSVertex* v = &m_vertex.buff[0];
 
+	// Gregory: code is not yet ready but it (fixes vertical lines issues MGS, The Godfather, Final Fight Streetwise) so let's enable it.
+	// Before it was enabled if CRC was below Full level but drawback was crc hacks on Full (DX) level couldn't be used,
+	// so we could only have one enabled instead of both if needed.
+
 	// Shadow_of_memories_Shadow_Flickering (Okami mustn't call this code)
 	if (m_texture_shuffle && count < 3 && PRIM->FST && (m_context->FRAME.FBMSK == 0)) {
 		// Avious dubious call to m_texture_shuffle on 16 bits games
@@ -468,16 +472,12 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 		m_texture_shuffle = ((v[1].U - v[0].U) < 256) || m_context->FRAME.Block() == m_context->TEX0.TBP0;
 	}
 
-	// Gregory: code is not yet ready but it (fixes vertical lines issues MGS, The Godfather, Final Fight Streetwise) so let's enable it.
-	// Before it was enabled if CRC was below Full level but drawback was crc hacks on Full (DX) level couldn't be used,
-	// so we could only have one enabled instead of both if needed.
+
 	if (m_texture_shuffle) {
 		m_ps_sel.shuffle = 1;
 		m_ps_sel.fmt = 0;
 
 		const GIFRegXYOFFSET& o = m_context->XYOFFSET;
-		GSVertex* v = &m_vertex.buff[0];
-		size_t count = m_vertex.next;
 
 		// vertex position is 8 to 16 pixels, therefore it is the 16-31 bits of the colors
 		int  pos = (v[0].XYZ.X - o.OFX) & 0xFF;
