@@ -452,48 +452,94 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 	m_ps_sel.key = 0;
 	m_ps_ssel.key = 0;
 
-	// Gregory: code is not yet ready so let's only enable it when
-	// CRC is below the FULL level
-	if (m_texture_shuffle && (m_crc_hack_level < CRCHackLevel::Full)) {
+	size_t count = m_vertex.next;
+	GSVertex* v = &m_vertex.buff[0];
+
+	// Gregory: code is not yet ready but it (fixes vertical lines issues MGS, The Godfather, Final Fight Streetwise) so let's enable it.
+	// Before it was enabled if CRC was below Full level but drawback was crc hacks on Full (DX) level couldn't be used,
+	// so we could only have one enabled instead of both if needed.
+
+	// Shadow_of_memories_Shadow_Flickering (Okami mustn't call this code)
+	if (m_texture_shuffle && count < 3 && PRIM->FST && (m_context->FRAME.FBMSK == 0)) {
+		// Avious dubious call to m_texture_shuffle on 16 bits games
+		// The pattern is severals column of 8 pixels. A single sprite
+		// smell fishy but a big sprite is wrong.
+
+		// Tomb Raider Angel of Darkness relies on this behavior to produce a fog effect.
+		// In this case, the address of the framebuffer and texture are the same. 
+		// The game will take RG => BA and then the BA => RG of next pixels. 
+		// However, only RG => BA needs to be emulated because RG isn't used.
+		m_texture_shuffle = ((v[1].U - v[0].U) < 256) || m_context->FRAME.Block() == m_context->TEX0.TBP0;
+	}
+
+
+	if (m_texture_shuffle) {
 		m_ps_sel.shuffle = 1;
 		m_ps_sel.fmt = 0;
 
 		const GIFRegXYOFFSET& o = m_context->XYOFFSET;
-		GSVertex* v = &m_vertex.buff[0];
-		size_t count = m_vertex.next;
 
 		// vertex position is 8 to 16 pixels, therefore it is the 16-31 bits of the colors
 		int  pos = (v[0].XYZ.X - o.OFX) & 0xFF;
+		float tw = (float)(1u << m_context->TEX0.TW);
 		bool write_ba = (pos > 112 && pos < 136);
 		// Read texture is 8 to 16 pixels (same as above)
 		int tex_pos = v[0].U & 0xFF;
 		m_ps_sel.read_ba = (tex_pos > 112 && tex_pos < 144);
 
-		GL_INS("Color shuffle %s => %s", m_ps_sel.read_ba ? "BA" : "RG", write_ba ? "BA" : "RG");
 
 		// Convert the vertex info to a 32 bits color format equivalent
-		for (size_t i = 0; i < count; i += 2) {
-			if (write_ba)
-				v[i].XYZ.X -= 128u;
-			else
-				v[i + 1].XYZ.X += 128u;
+		if (PRIM->FST) {
 
-			if (m_ps_sel.read_ba)
-				v[i].U -= 128u;
-			else
-				v[i + 1].U += 128u;
+			for(size_t i = 0; i < count; i += 2) {
+				if (write_ba)
+					v[i].XYZ.X   -= 128u;
+				else
+					v[i+1].XYZ.X += 128u;
 
-			// Height is too big (2x).
-			int tex_offset = v[i].V & 0xF;
-			GSVector4i offset(o.OFY, tex_offset, o.OFY, tex_offset);
+				if (m_ps_sel.read_ba)
+					v[i].U       -= 128u;
+				else
+					v[i+1].U     += 128u;
 
-			GSVector4i tmp(v[i].XYZ.Y, v[i].V, v[i + 1].XYZ.Y, v[i + 1].V);
-			tmp = GSVector4i(tmp - offset).srl32(1) + offset;
+				// Height is too big (2x).
+				int tex_offset = v[i].V & 0xF;
+				GSVector4i offset(o.OFY, tex_offset, o.OFY, tex_offset);
 
-			v[i].XYZ.Y = (uint16)tmp.x;
-			v[i].V = (uint16)tmp.y;
-			v[i + 1].XYZ.Y = (uint16)tmp.z;
-			v[i + 1].V = (uint16)tmp.w;
+				GSVector4i tmp(v[i].XYZ.Y, v[i].V, v[i+1].XYZ.Y, v[i+1].V);
+				tmp = GSVector4i(tmp - offset).srl32(1) + offset;
+
+				v[i].XYZ.Y   = (uint16)tmp.x;
+				v[i].V       = (uint16)tmp.y;
+				v[i+1].XYZ.Y = (uint16)tmp.z;
+				v[i+1].V     = (uint16)tmp.w;
+			}
+		} else {
+			const float offset_8pix = 8.0f / tw;
+
+			for (size_t i = 0; i < count; i += 2) {
+				if (write_ba)
+					v[i].XYZ.X -= 128u;
+				else
+					v[i + 1].XYZ.X += 128u;
+
+				if (m_ps_sel.read_ba)
+					v[i].ST.S -= offset_8pix;
+				else
+					v[i + 1].ST.S += offset_8pix;
+
+				// Height is too big (2x).
+				GSVector4i offset(o.OFY, o.OFY);
+
+				GSVector4i tmp(v[i].XYZ.Y, v[i + 1].XYZ.Y);
+				tmp = GSVector4i(tmp - offset).srl32(1) + offset;
+
+				//fprintf(stderr, "Before %d, After %d\n", v[i+1].XYZ.Y, tmp.y);
+				v[i].XYZ.Y = (uint16)tmp.x;
+				v[i].ST.T /= 2.0f;
+				v[i + 1].XYZ.Y = (uint16)tmp.y;
+				v[i + 1].ST.T /= 2.0f;
+			}
 		}
 
 		// Please bang my head against the wall!
@@ -508,8 +554,7 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 				om_bsel.wb = 1;
 			else
 				om_bsel.wr = 1;
-		}
-		else if ((fbmask & 0xFF) != 0xFF) {
+		} else if ((fbmask & 0xFF) != 0xFF) {
 #ifdef _DEBUG
 			fprintf(stderr, "Please fix me! wb %u wr %u\n", om_bsel.wb, om_bsel.wr);
 #endif
@@ -522,16 +567,14 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 				om_bsel.wa = 1;
 			else
 				om_bsel.wg = 1;
-		}
-		else if ((fbmask & 0xFF) != 0xFF) {
+		} else if ((fbmask & 0xFF) != 0xFF) {
 #ifdef _DEBUG
 			fprintf(stderr, "Please fix me! wa %u wg %u\n", om_bsel.wa, om_bsel.wg);
 #endif
 			//ASSERT(0);
 		}
 
-	}
-	else {
+	} else {
 		//ps_sel.fmt = GSLocalMemory::m_psm[m_context->FRAME.PSM].fmt;
 
 		om_bsel.wrgba = ~GSVector4i::load((int)m_context->FRAME.FBMSK).eq8(GSVector4i::xffffffff()).mask();
