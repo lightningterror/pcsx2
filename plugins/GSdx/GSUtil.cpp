@@ -209,6 +209,25 @@ bool GSUtil::HasCompatibleBits(uint32 spsm, uint32 dpsm)
 	return (s_maps.CompatibleBitsField[spsm][dpsm >> 5] & (1 << (dpsm & 0x1f))) != 0;
 }
 
+bool GSUtil::IsNvidiaHack()
+{
+	CComPtr<IDXGIFactory1> dxgi_factory;
+	if (SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&dxgi_factory))))
+	{
+		CComPtr<IDXGIAdapter1> adapter;
+		if (SUCCEEDED(dxgi_factory->EnumAdapters1(0, &adapter)))
+		{
+			DXGI_ADAPTER_DESC1 desc;
+			if (SUCCEEDED(adapter->GetDesc1(&desc)))
+			{
+				// Check for Nvidia VendorID. Nvidia needs a special hack.
+				if (desc.VendorId == _NVIDIA_VENDOR_ID)
+					return true;
+			}
+		}
+	}
+}
+
 bool GSUtil::CheckSSE()
 {
 	bool status = true;
@@ -424,7 +443,7 @@ GSRendererType GSUtil::GetBestRenderer()
 			{
 				D3D_FEATURE_LEVEL level = GSUtil::CheckDirect3D11Level();
 				// Check for Nvidia VendorID. Latest OpenGL features need at least DX11 level GPU
-				if (desc.VendorId == 0x10DE && level >= D3D_FEATURE_LEVEL_11_0)
+				if (desc.VendorId == _NVIDIA_VENDOR_ID && level >= D3D_FEATURE_LEVEL_11_0)
 					return GSRendererType::OGL_HW;
 				if (level >= D3D_FEATURE_LEVEL_10_0)
 					return GSRendererType::DX1011_HW;

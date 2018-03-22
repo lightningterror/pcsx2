@@ -24,6 +24,10 @@
 #include "GS.h"
 #include "xbyak/xbyak_util.h"
 
+#define _NVIDIA_VENDOR_ID	0x10DE
+#define _AMD_VENDOR_ID		0x1002 || 0x1022
+#define _INTEL_VENDOR_ID	0x8086 || 0x8087 || 0x163C
+
 struct OCLDeviceDesc
 {
 #ifdef ENABLE_OPENCL
