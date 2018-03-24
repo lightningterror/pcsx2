@@ -88,6 +88,14 @@ class GSDevice11 : public GSDeviceDX
 		ID3D11DepthStencilView* dsv;
 	} m_state;
 
+	struct alignas(32) MiscConstantBuffer
+	{
+		GSVector4i ScalingFactor;
+		GSVector4i ChannelShuffle;
+
+		MiscConstantBuffer() { memset(this, 0, sizeof(*this)); }
+	};
+
 public: // TODO
 	CComPtr<ID3D11RasterizerState> m_rs;
 
@@ -161,6 +169,7 @@ public: // TODO
 	VSConstantBuffer m_vs_cb_cache;
 	GSConstantBuffer m_gs_cb_cache;
 	PSConstantBuffer m_ps_cb_cache;
+	MiscConstantBuffer m_misc_cb_cache;
 
 	bool CreateTextureFX();
 
@@ -226,6 +235,7 @@ public:
 	void SetupVS(VSSelector sel, const VSConstantBuffer* cb);
 	void SetupGS(GSSelector sel, const GSConstantBuffer* cb);
 	void SetupPS(PSSelector sel, const PSConstantBuffer* cb, PSSamplerSelector ssel);
+	void SetupCBMisc(const GSVector4i& channel);
 	void SetupOM(OMDepthStencilSelector dssel, OMBlendSelector bsel, uint8 afix);
 
 	bool HasStencil() { return true; }

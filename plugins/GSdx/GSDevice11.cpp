@@ -32,6 +32,7 @@ GSDevice11::GSDevice11()
 	memset(&m_vs_cb_cache, 0, sizeof(m_vs_cb_cache));
 	memset(&m_gs_cb_cache, 0, sizeof(m_gs_cb_cache));
 	memset(&m_ps_cb_cache, 0, sizeof(m_ps_cb_cache));
+	memset(&m_misc_cb_cache, 0, sizeof(m_misc_cb_cache));
 
 	FXAA_Compiled = false;
 	ExShader_Compiled = false;
@@ -186,6 +187,10 @@ bool GSDevice11::Create(const std::shared_ptr<GSWnd> &wnd)
 	};
 
 	std::vector<char> shader;
+
+	m_misc_cb_cache.ScalingFactor = GSVector4i(theApp.GetConfigI("upscale_multiplier"));
+	// m_convert.pt->m_misc_cb_cache(&m_misc_cb_cache);
+
 	theApp.LoadResource(IDR_CONVERT_FX, shader);
 	CompileShader(shader.data(), shader.size(), "convert.fx", nullptr, "vs_main", nullptr, &m_convert.vs, il_convert, countof(il_convert), &m_convert.il);
 
@@ -1351,6 +1356,12 @@ void GSDevice11::OMSetRenderTargets(const GSVector2i& rtsize, int count, ID3D11U
 
 		m_ctx->RSSetScissorRects(1, r);
 	}
+}
+
+void GSDevice11::SetupCBMisc(const GSVector4i& channel)
+{
+	m_misc_cb_cache.ChannelShuffle = channel;
+	// m_convert.pt->cache_upload(&m_misc_cb_cache);
 }
 
 void GSDevice11::CompileShader(const char* source, size_t size, const char* fn, ID3DInclude *include, const char* entry, D3D_SHADER_MACRO* macro, ID3D11VertexShader** vs, D3D11_INPUT_ELEMENT_DESC* layout, int count, ID3D11InputLayout** il)

@@ -40,6 +40,7 @@
 #define PS_SPRITEHACK 0
 #define PS_TCOFFSETHACK 0
 #define PS_POINT_SAMPLER 0
+#define PS_CHANNEL_FETCH 0
 #define PS_SHUFFLE 0
 #define PS_READ_BA 0
 #define PS_PAL_FMT 0
@@ -85,9 +86,11 @@ struct PS_OUTPUT
 Texture2D<float4> Texture : register(t0);
 Texture2D<float4> Palette : register(t1);
 Texture2D<float4> RTCopy : register(t2);
+//Texture2D<float4> RawTexture : register(t3);
 SamplerState TextureSampler : register(s0);
 SamplerState PaletteSampler : register(s1);
 SamplerState RTCopySampler : register(s2);
+//SamplerState RawTextureSampler : register(s3);
 
 cbuffer cb0
 {
@@ -215,6 +218,42 @@ float4 ps_params[7];
 #define TA			ps_params[4].zw
 
 #define TC_OffsetHack ps_params[6]
+
+//////////////////////////////////////////////////////////////////////
+// Fetch a Single Channel
+//////////////////////////////////////////////////////////////////////
+
+#if SHADER_MODEL >= 0x400
+// Channel 1
+float4 fetch_red(int2 xy)
+{
+	float4 rt = fetch_raw_color(int2(input.p.xy));
+	return sample_p(rt.r);
+}
+
+// Channel 2
+float4 fetch_green(int2 xy)
+{
+	float4 rt = fetch_raw_color(int2(input.p.xy));
+	return sample_p(rt.g);
+}
+
+// Channel 3
+float4 fetch_blue(int2 xy)
+{
+	float4 rt = fetch_raw_color(int2(input.p.xy));
+	return sample_p(rt.b);
+}
+
+// Channel 4
+float4 fetch_alpha(int2 xy)
+{
+	float4 rt = fetch_raw_color(int2(input.p.xy));
+	return sample_p(rt.a);
+}
+#endif
+
+//////////////////////////////////////////////////////////////////////
 
 float4 sample_c(float2 uv)
 {
@@ -360,6 +399,13 @@ float4x4 sample_4p(float4 u)
 
 	return c;
 }
+
+#if SHADER_MODEL >= 0x400
+float4 fetch_raw_color(int2 xy)
+{
+	Texture.Load(int3(xy, 0));
+}
+#endif
 
 float4 sample(float2 st, float q)
 {
@@ -558,7 +604,17 @@ float4 ps_color(PS_INPUT input)
 {
 	datst(input);
 
+#if PS_CHANNEL_FETCH == 1
+	float4 t = fetch_red(int2(input.p.xy));
+#elif PS_CHANNEL_FETCH == 2
+	float4 t = fetch_green(int2(input.p.xy));
+#elif PS_CHANNEL_FETCH == 3
+	float4 t = fetch_blue(int2(input.p.xy));
+#elif PS_CHANNEL_FETCH == 4
+	float4 t = fetch_alpha(int2(input.p.xy));
+#else
 	float4 t = sample(input.t.xy, input.t.w);
+#endif
 
 	float4 c = tfx(t, input.c);
 

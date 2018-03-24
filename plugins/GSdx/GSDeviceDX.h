@@ -191,7 +191,6 @@ public:
 				uint32 shuffle:1;
 				uint32 read_ba:1;
 
-				uint32 _free:32;
 			};
 
 			uint64 key;
