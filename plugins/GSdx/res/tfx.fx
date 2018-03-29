@@ -86,11 +86,11 @@ struct PS_OUTPUT
 Texture2D<float4> Texture : register(t0);
 Texture2D<float4> Palette : register(t1);
 Texture2D<float4> RTCopy : register(t2);
-//Texture2D<float4> RawTexture : register(t3);
+Texture2D<float4> RawTexture : register(t3);
 SamplerState TextureSampler : register(s0);
 SamplerState PaletteSampler : register(s1);
 SamplerState RTCopySampler : register(s2);
-//SamplerState RawTextureSampler : register(s3);
+SamplerState RawTextureSampler : register(s3);
 
 cbuffer cb0
 {
@@ -139,6 +139,11 @@ float4 sample_p(float u)
 float4 sample_rt(float2 uv)
 {
 	return RTCopy.Sample(RTCopySampler, uv);
+}
+
+float4 sample_rw(float2 uv)
+{
+	return RawTexture.Sample(RawTextureSampler, uv);
 }
 
 #elif SHADER_MODEL <= 0x300
@@ -268,6 +273,11 @@ float4 sample_p(float u)
 float4 sample_rt(float2 uv)
 {
 	return tex2D(RTCopy, uv);
+}
+
+float4 sample_rw(float2 uv)
+{
+	return tex2D(RawTexture, uv);
 }
 
 #endif

@@ -189,7 +189,7 @@ bool GSDevice11::Create(const std::shared_ptr<GSWnd> &wnd)
 	std::vector<char> shader;
 
 	m_misc_cb_cache.ScalingFactor = GSVector4i(theApp.GetConfigI("upscale_multiplier"));
-	// m_convert.pt->m_misc_cb_cache(&m_misc_cb_cache);
+	//m_convert.ch->m_misc_cb_cache(&m_misc_cb_cache);
 
 	theApp.LoadResource(IDR_CONVERT_FX, shader);
 	CompileShader(shader.data(), shader.size(), "convert.fx", nullptr, "vs_main", nullptr, &m_convert.vs, il_convert, countof(il_convert), &m_convert.il);
@@ -346,6 +346,24 @@ bool GSDevice11::Create(const std::shared_ptr<GSWnd> &wnd)
 
 	hr = m_dev->CreateSamplerState(&sd, &m_convert.pt);
 
+	//
+
+	memset(&sd, 0, sizeof(sd));
+
+	sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+	sd.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+	sd.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+	sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+	sd.MinLOD = -FLT_MAX;
+	sd.MaxLOD = FLT_MAX;
+	sd.ComparisonFunc = D3D11_COMPARISON_NEVER;
+
+	hr = m_dev->CreateSamplerState(&sd, &m_convert.pt);
+	
+	sd.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+	
+	hr = m_dev->CreateSamplerState(&sd, &m_convert.ch);
+	
 	//
 
 	Reset(1, 1);
