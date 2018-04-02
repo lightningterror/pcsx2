@@ -329,6 +329,112 @@ void GSRendererDX::EmulateTextureSampler(const GSTextureCache::Source* tex)
 	m_ps_ssel.ltf = bilinear && !shader_emulated_sampler;
 }
 
+GSRendererDX::PRIM_OVERLAP GSRendererDX::PrimitiveOverlap()
+{
+	// Either 1 triangle or 1 line or 3 POINTs
+	// It is bad for the POINTs but low probability that they overlap
+	if (m_vertex.next < 4)
+		return PRIM_OVERLAP_NO;
+
+	if (m_vt.m_primclass != GS_SPRITE_CLASS)
+		return PRIM_OVERLAP_UNKNOW; // maybe, maybe not
+
+	// Check intersection of sprite primitive only
+	size_t count = m_vertex.next;
+	PRIM_OVERLAP overlap = PRIM_OVERLAP_NO;
+	GSVertex* v = m_vertex.buff;
+
+	m_drawlist.clear();
+	size_t i = 0;
+	while (i < count) {
+		// In order to speed up comparison a bounding-box is accumulated. It removes a
+		// loop so code is much faster (check game virtua fighter). Besides it allow to check
+		// properly the Y order.
+
+		// .x = min(v[i].XYZ.X, v[i+1].XYZ.X)
+		// .y = min(v[i].XYZ.Y, v[i+1].XYZ.Y)
+		// .z = max(v[i].XYZ.X, v[i+1].XYZ.X)
+		// .w = max(v[i].XYZ.Y, v[i+1].XYZ.Y)
+		GSVector4i all = GSVector4i(v[i].m[1]).upl16(GSVector4i(v[i+1].m[1])).upl16().xzyw();
+		all = all.xyxy().blend(all.zwzw(), all > all.zwxy());
+
+		size_t j = i + 2;
+		while (j < count) {
+			GSVector4i sprite = GSVector4i(v[j].m[1]).upl16(GSVector4i(v[j+1].m[1])).upl16().xzyw();
+			sprite = sprite.xyxy().blend(sprite.zwzw(), sprite > sprite.zwxy());
+
+			// Be sure to get vertex in good order, otherwise .r* function doesn't
+			// work as expected.
+			ASSERT(sprite.x <= sprite.z);
+			ASSERT(sprite.y <= sprite.w);
+			ASSERT(all.x <= all.z);
+			ASSERT(all.y <= all.w);
+
+			if (all.rintersect(sprite).rempty()) {
+				all = all.runion_ordered(sprite);
+			} else {
+				overlap = PRIM_OVERLAP_YES;
+				break;
+			}
+			j += 2;
+		}
+		m_drawlist.push_back((j - i) >> 1); // Sprite count
+		i = j;
+	}
+
+#if 0
+	// Old algo: less constraint but O(n^2) instead of O(n) as above
+
+	// You have no guarantee on the sprite order, first vertex can be either top-left or bottom-left
+	// There is a high probability that the draw call will uses same ordering for all vertices.
+	// In order to keep a small performance impact only the first sprite will be checked
+	//
+	// Some safe-guard will be added in the outer-loop to avoid corruption with a limited perf impact
+	if (v[1].XYZ.Y < v[0].XYZ.Y) {
+		// First vertex is Top-Left
+		for(size_t i = 0; i < count; i += 2) {
+			if (v[i+1].XYZ.Y > v[i].XYZ.Y) {
+				return PRIM_OVERLAP_UNKNOW;
+			}
+			GSVector4i vi(v[i].XYZ.X, v[i+1].XYZ.Y, v[i+1].XYZ.X, v[i].XYZ.Y);
+			for (size_t j = i+2; j < count; j += 2) {
+				GSVector4i vj(v[j].XYZ.X, v[j+1].XYZ.Y, v[j+1].XYZ.X, v[j].XYZ.Y);
+				GSVector4i inter = vi.rintersect(vj);
+				if (!inter.rempty()) {
+					return PRIM_OVERLAP_YES;
+				}
+			}
+		}
+	} else {
+		// First vertex is Bottom-Left
+		for(size_t i = 0; i < count; i += 2) {
+			if (v[i+1].XYZ.Y < v[i].XYZ.Y) {
+				return PRIM_OVERLAP_UNKNOW;
+			}
+			GSVector4i vi(v[i].XYZ.X, v[i].XYZ.Y, v[i+1].XYZ.X, v[i+1].XYZ.Y);
+			for (size_t j = i+2; j < count; j += 2) {
+				GSVector4i vj(v[j].XYZ.X, v[j].XYZ.Y, v[j+1].XYZ.X, v[j+1].XYZ.Y);
+				GSVector4i inter = vi.rintersect(vj);
+				if (!inter.rempty()) {
+					return PRIM_OVERLAP_YES;
+				}
+			}
+		}
+	}
+#endif
+
+	//fprintf(stderr, "%d: Yes, code can be optimized (draw of %d vertices)\n", s_n, count);
+	return overlap;
+}
+
+GSVector4i GSRendererDX::ComputeBoundingBox(const GSVector2& rtscale, const GSVector2i& rtsize)
+{
+	GSVector4 scale = GSVector4(rtscale.x, rtscale.y);
+	GSVector4 offset = GSVector4(-1.0f, 1.0f); // Round value
+	GSVector4 box = m_vt.m_min.p.xyxy(m_vt.m_max.p) + offset.xxyy();
+	return GSVector4i(box * scale.xyxy()).rintersect(GSVector4i(0, 0, rtsize.x, rtsize.y));
+}
+
 void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* tex)
 {
 	const GSVector2i& rtsize = ds ? ds->GetSize()  : rt->GetSize();
@@ -473,6 +579,15 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 	m_ps_ssel.key = 0;
 
 	EmulateTextureShuffleAndFbmask();
+
+	if (DATE) {
+		if (om_bsel.wa && !m_context->TEST.ATE) {
+			// Performance note: check alpha range with GetAlphaMinMax()
+			// Note: all my dump are already above 120fps, but it seems to reduce GPU load
+			// with big upscaling
+			GetAlphaMinMax();
+		}
+	}
 
 	if(DATE)
 	{

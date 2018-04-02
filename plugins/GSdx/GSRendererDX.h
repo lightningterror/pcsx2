@@ -26,6 +26,15 @@
 
 class GSRendererDX : public GSRendererHW
 {
+	enum PRIM_OVERLAP {
+		PRIM_OVERLAP_UNKNOW,
+		PRIM_OVERLAP_YES,
+		PRIM_OVERLAP_NO
+	};
+
+	PRIM_OVERLAP m_prim_overlap;
+	std::vector<size_t> m_drawlist;
+
 	GSVector2 m_pixelcenter;
 	bool m_logz;
 	bool m_fba;
@@ -48,6 +57,9 @@ protected:
 	int UserHacks_HPO;
 
 	bool DATE;
+
+	PRIM_OVERLAP PrimitiveOverlap();
+	GSVector4i ComputeBoundingBox(const GSVector2& rtscale, const GSVector2i& rtsize);
 
 	GSDrawingContext* context;
 	GSDrawingEnvironment env;
