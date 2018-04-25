@@ -162,7 +162,6 @@ float4 sample_rt(float2 uv)
 #define PS_RT 0
 #define PS_LTF 0
 #define PS_COLCLIP 0
-#define PS_HDR 0
 #define PS_DATE 0
 #define PS_PAL_FMT 0
 #endif
@@ -576,16 +575,18 @@ float4 ps_color(PS_INPUT input)
 	{
 		c.rgb *= c.rgb < 128./255;
 	}
-	if (PS_HDR)
-	{
-		//if (any(greaterThan(c.rgb, float3(128.0f)))) {
-			c.rgb = (c.rgb - 256.0f);
-		//}
-	}
 	if(PS_CLR1) // needed for Cd * (As/Ad/F + 1) blending modes
 	{
 		c.rgb = 1; 
 	}
+#if SHADER_MODEL >= 0x400
+	if (PS_HDR)
+	{
+		//if (any(greaterThan(c.rgb, float3(128.0f)))) {
+		c.rgb = (c.rgb - 256.0f);
+		//}
+	}
+#endif
 
 	return c;
 }
