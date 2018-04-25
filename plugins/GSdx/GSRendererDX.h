@@ -52,6 +52,8 @@ protected:
 	GSDrawingContext* context;
 	GSDrawingEnvironment env;
 
+	GSVector4i ComputeBoundingBox(const GSVector2& rtscale, const GSVector2i& rtsize);
+
 	GSDeviceDX* dev;
 
 	GSDeviceDX::OMDepthStencilSelector om_dssel;

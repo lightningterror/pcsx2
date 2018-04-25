@@ -137,7 +137,7 @@ void GSDevice9::SetupPS(PSSelector sel, const PSConstantBuffer* cb, PSSamplerSel
 
 	if(i == m_ps.end())
 	{
-		std::string str[18];
+		std::string str[19];
 
 		str[0] = format("%d", sel.fst);
 		str[1] = format("%d", sel.wms);
@@ -157,6 +157,7 @@ void GSDevice9::SetupPS(PSSelector sel, const PSConstantBuffer* cb, PSSamplerSel
 		str[15] = format("%d", sel.tcoffsethack);
 		str[16] = format("%d", sel.point_sampler);
 		str[17] = format("%d", sel.fmt >> 2);
+		str[18] = format("%d", sel.hdr);
 
 		D3D_SHADER_MACRO macro[] =
 		{
@@ -178,6 +179,7 @@ void GSDevice9::SetupPS(PSSelector sel, const PSConstantBuffer* cb, PSSamplerSel
 			{"PS_TCOFFSETHACK", str[15].c_str()},
 			{"PS_POINT_SAMPLER", str[16].c_str()},
 			{"PS_PAL_FMT", str[17].c_str()},
+			{"PS_HDR", str[18].c_str()},
 			{NULL, NULL},
 		};
 

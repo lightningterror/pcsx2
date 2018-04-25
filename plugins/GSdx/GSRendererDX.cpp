@@ -329,6 +329,14 @@ void GSRendererDX::EmulateTextureSampler(const GSTextureCache::Source* tex)
 	m_ps_ssel.ltf = bilinear && !shader_emulated_sampler;
 }
 
+GSVector4i GSRendererDX::ComputeBoundingBox(const GSVector2& rtscale, const GSVector2i& rtsize)
+{
+	GSVector4 scale = GSVector4(rtscale.x, rtscale.y);
+	GSVector4 offset = GSVector4(-1.0f, 1.0f); // Round value
+	GSVector4 box = m_vt.m_min.p.xyxy(m_vt.m_max.p) + offset.xxyy();
+	return GSVector4i(box * scale.xyxy()).rintersect(GSVector4i(0, 0, rtsize.x, rtsize.y));
+}
+
 void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* tex)
 {
 	const GSVector2i& rtsize = ds ? ds->GetSize()  : rt->GetSize();
@@ -343,7 +351,7 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 
 	vs_cb.Texture_Scale_Offset = GSVector4(0.0f);
 
-	GSTexture* rtcopy = NULL;
+	GSTexture* hdr_rt = NULL;
 
 	ASSERT(m_dev != NULL);
 
@@ -374,14 +382,14 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 
 			dev->SetupDATE(rt, ds, vertices, m_context->TEST.DATM);
 		}
-		else
+		/*else
 		{
-			rtcopy = dev->CreateRenderTarget(rtsize.x, rtsize.y, false, rt->GetFormat());
+			hdr_rt = dev->CreateRenderTarget(rtsize.x, rtsize.y, false, rt->GetFormat());
 
 			// I'll use VertexTrace when I consider it more trustworthy
 
-			dev->CopyRect(rt, rtcopy, GSVector4i(rtsize).zwxy());
-		}
+			dev->CopyRect(rt, hdr_rt, GSVector4i(rtsize).zwxy());
+		}*/
 	}
 
 	//
@@ -434,7 +442,7 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 	vs_sel.tme = PRIM->TME;
 	vs_sel.fst = PRIM->FST;
 	vs_sel.logz = dev->HasDepth32() ? 0 : m_logz ? 1 : 0;
-	vs_sel.rtcopy = !!rtcopy;
+	vs_sel.rtcopy = !!hdr_rt;
 
 	float sx = 2.0f * rtscale.x / (rtsize.x << 4);
 	float sy = 2.0f * rtscale.y / (rtsize.y << 4);
@@ -578,7 +586,7 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 	dev->OMSetRenderTargets(rt, ds, &scissor);
 	dev->PSSetShaderResource(0, tex ? tex->m_texture : NULL);
 	dev->PSSetShaderResource(1, tex ? tex->m_palette : NULL);
-	dev->PSSetShaderResource(2, rtcopy);
+	dev->PSSetShaderResource(2, hdr_rt);
 
 	uint8 afix = m_context->ALPHA.FIX;
 
@@ -590,6 +598,17 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 	dev->SetupPS(m_ps_sel, &ps_cb, m_ps_ssel);
 
 	// draw
+
+	if (m_ps_sel.hdr) {
+		hdr_rt = dev->CreateRenderTarget(rtsize.x, rtsize.y, false, rt->GetFormat());
+
+		dev->CopyRect(rt, hdr_rt, ComputeBoundingBox(rtscale, rtsize).zwxy());
+
+		dev->OMSetRenderTargets(hdr_rt, ds, &scissor);
+	}
+	else {
+		dev->OMSetRenderTargets(rt, ds, &scissor);
+	}
 
 	if (ate_first_pass)
 	{
@@ -684,7 +703,15 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 
 	dev->EndScene();
 
-	dev->Recycle(rtcopy);
+	// Warning: EndScene must be called before StretchRect otherwise
+	// vertices will be overwritten. Trust me you don't want to do that.
+	if (hdr_rt) {
+		GSVector4 dRect(ComputeBoundingBox(rtscale, rtsize));
+		GSVector4 sRect = dRect / GSVector4(rtsize.x, rtsize.y).xyxy();
+		dev->StretchRect(hdr_rt, sRect, rt, dRect, ShaderConvert_MOD_256, false);
+
+		dev->Recycle(hdr_rt);
+	}
 
 	if(om_dssel.fba) UpdateFBA(rt);
 }

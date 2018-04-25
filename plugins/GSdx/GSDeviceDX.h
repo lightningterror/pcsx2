@@ -184,6 +184,7 @@ public:
 				uint32 rt:1;
 				uint32 ltf:1;
 				uint32 colclip:2;
+				uint32 hdr:1;
 				uint32 date:2;
 				uint32 spritehack:1;
 				uint32 tcoffsethack:1;
@@ -191,7 +192,7 @@ public:
 				uint32 shuffle:1;
 				uint32 read_ba:1;
 
-				uint32 _free:32;
+				uint32 _free:31;
 			};
 
 			uint64 key;
