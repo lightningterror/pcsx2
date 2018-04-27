@@ -151,13 +151,13 @@ CRC::Game CRC::m_games[] =
 	{0x7ABDBB5E, GT3, CH, 0}, // cutie comment
 	{0x3E9D448A, GT3, CH, 0}, // cutie comment
 	{0xAD66643C, GT3, CH, 0}, // cutie comment
-	{0x6810C3BC, GT3, CH, 0}, // Gran Turismo Concept 2002 Tokyo-Geneva
 	{0x85AE91B3, GT3, US, 0},
 	{0x8AA991B0, GT3, US, 0},
 	{0xC220951A, GT3, JP, 0},
-	{0x9DE5CF65, GT3, JP, 0}, // Gran Turismo 3: A-spec
+	{0x9DE5CF65, GT3, JP, 0},
+	{0xB590CE04, GT3, EU, 0},
 	{0x60013EBD, GTConcept, EU, 0},
-	{0xB590CE04, GTConcept, EU, 0},
+	{0x6810C3BC, GTConcept, CH, 0}, // Gran Turismo Concept 2002 Tokyo-Geneva
 	{0x0EEF32A3, GTConcept, KO, 0}, // Gran Turismo Concept 2002 Tokyo-Seoul
 	{0xC164550A, WildArms5, JPUNDUB, 0},
 	{0xC1640D2C, WildArms5, US, 0},
@@ -182,6 +182,8 @@ CRC::Game CRC::m_games[] =
 	{0x72E1E60E, Spartan, EU, 0},
 	{0x26689C87, Spartan, JP, 0},
 	{0x08277A9E, Spartan, US, 0},
+	{0xAC3C1147, SVCChaos, EU, 0}, // SVC Chaos: SNK vs. Capcom
+	{0xB00FF2ED, SVCChaos, JP, 0},
 	{0xA32F7CD0, AceCombat4, US, 0}, // Also needed for automatic mipmapping
 	{0x5ED8FB53, AceCombat4, JP, 0},
 	{0x1B9B7563, AceCombat4, EU, 0},
@@ -221,6 +223,7 @@ CRC::Game CRC::m_games[] =
 	{0xFA0DF523, GodOfWar2, CH, 0}, // cutie comment
 	{0x9FEE3466, GodOfWar2, CH, 0}, // cutie comment
 	{0x5D482F18, JackieChanAdv, EU, 0},
+	{0xAC4DFD5A, JackieChanAdv, EU, 0},
 	{0xF0A6D880, HarvestMoon, US, 0},
 	{0x9536E111, NamcoXCapcom, JP, 0},
 	{0x75C01A04, NamcoXCapcom, US, 0}, // same CRC as another JP disc
@@ -260,6 +263,7 @@ CRC::Game CRC::m_games[] =
 	{0x774DE8E2, ValkyrieProfile2, JP, 0},
 	{0x04CCB600, ValkyrieProfile2, EU, 0},
 	{0xB65E141B, ValkyrieProfile2, DE, 0}, // PAL German
+	{0x8510854E, ValkyrieProfile2, FR, 0},
 	{0xC70FC973, ValkyrieProfile2, IT, 0},
 	{0x47B9B2FD, RadiataStories, US, 0},
 	{0xAC73005E, RadiataStories, JP, 0},
@@ -282,6 +286,7 @@ CRC::Game CRC::m_games[] =
 	{0x1CC39DBD, SuikodenTactics, US, 0},
 	{0x3E205556, SuikodenTactics, EU, 0},
 	{0xB808413B, SuikodenTactics, JP, 0},
+	{0xA33AF77A, TenchuFS, US, 0},
 	{0x64C58FB4, TenchuFS, US, 0},
 	{0xE7CCCB1E, TenchuFS, EU, 0},
 	{0x1969B19A, TenchuFS, ES, 0}, // PAL Spanish
@@ -296,10 +301,14 @@ CRC::Game CRC::m_games[] =
 	{0xC8DADF58, TenchuWoH, EU, 0},
 	{0x13DD9957, TenchuWoH, JP, 0},
 	{0x8BC95883, Sly3, US, 0},
+	{0x3130A4D3, Sly3, US, 0}, // E3 Demo
+	{0x35CCFA60, Sly3, US, 0}, // Regular Demo
 	{0x8164C614, Sly3, EU, 0},
 	{0xA8CC1583, Sly3, KO, 0},
 	{0x518DD841, Sly2, KO, 0},
 	{0x07652DD9, Sly2, US, 0},
+	{0x5B93397F, Sly2, US, 0}, // E3 Demo
+	{0x615EA2DB, Sly2, JP, 0}, // Kaitou Sly Cooper 2
 	{0xFDA1CBF6, Sly2, EU, 0},
 	{0x15DD1F6F, Sly2, NoRegion, 0},
 	{0xA9C82AB9, DemonStone, US, 0},
@@ -372,17 +381,19 @@ CRC::Game CRC::m_games[] =
 	{0xB05805B6, TombRaiderAnniversary, JP, 0}, // cutie comment
 	{0xA629A376, TombRaiderAnniversary, EU, 0},
 	{0xBC8B3F50, TombRaiderLegend, US, 0}, // cutie comment
+	{0x365172A0, TombRaiderLegend, JP, 0},
 	{0x05177ECE, TombRaiderLegend, EU, 0},
 	{0x08FFF00D, SSX3, JP, 0}, // cutie comment
 	{0xCE942B2A, SSX3, EU, 0},
 	{0x5C891FF1, Black, US, 0},
 	{0xCAA04879, Black, EU, 0},
-	{0xADDFF505, Black, EU, 0},	//?
+	{0xADDFF505, Black, EU, 0},
 	{0xB3A9F9ED, Black, JP, 0},
 	{0x7838882F, VF4, JP, 0},
 	{0xEA131B57, VF4, US, 0},
 	{0x879CDA5E, StarWarsForceUnleashed, US, 0},
 	{0x137C792E, StarWarsForceUnleashed, US, 0},
+	{0xDAF2145C, StarWarsForceUnleashed, EU, 0},
 	{0x503BF9E1, StarWarsBattlefront, NoRegion, 0}, // EU and US versions have the same CRC
 	{0x02F4B541, StarWarsBattlefront2, NoRegion, 0}, // EU and US versions have the same CRC
 	{0xA8DB29DF, BlackHawkDown, EU, 0},
@@ -410,7 +421,7 @@ CRC::Game CRC::m_games[] =
 	{0xD03D4C77, SpyroNewBeginning, US, 0},
 	{0x0EE5646B, SpyroNewBeginning, EU, 0},
 	// {0x7ACF7E03, SpyroNewBeginning, NoRegion, 0}, // same CRC as {ICO, NoRegion}
-	//  and as "Twisted Metal - Black" (PAL).
+	// and as "Twisted Metal - Black" (PAL).
 	{0xB80CE8EC, SpyroEternalNight, US, 0},
 	{0x8AE9536D, SpyroEternalNight, EU, 0},
 	{0xC95F0198, SpyroEternalNight, NoRegion, 0},
@@ -460,7 +471,9 @@ CRC::Game CRC::m_games[] =
 	{0xFE44479E, ShinOnimusha, US, 0},
 	{0xFFDE85E9, ShinOnimusha, US, 0},
 	{0xE21404E2, GetaWay, US, 0},
+	{0x458485EF, GetaWay, EU, 0},
 	{0xE78971DF, GetaWayBlackMonday, US, 0},
+	{0x09C3DF79, GetaWayBlackMonday, EU, 0},
 	{0x1130BF23, SakuraTaisen, CH, 0}, // cutie comment
 	{0x4FAE8B83, SakuraTaisen, KO, 0},
 	{0xEF06DBD6, SakuraWarsSoLongMyLove, JP, 0}, // cutie comment
@@ -482,6 +495,7 @@ CRC::Game CRC::m_games[] =
 	{0xAEDAEE99, GodHand, JP, 0},
 	{0x6FB69282, GodHand, US, 0},
 	{0x924C4AA6, GodHand, KO, 0},
+	{0xDE9722A5, GodHand, EU, 0},
 	{0x9637D496, KnightsOfTheTemple2, JP, 0}, // cutie comment
 	{0x4E811100, UltramanFightingEvolution, JP, 0}, // cutie comment
 	{0xF7F181C3, DeathByDegreesTekkenNinaWilliams, CH, 0}, // cutie comment
@@ -516,6 +530,7 @@ CRC::Game CRC::m_games[] =
 	{0x9F391882, SteambotChronicles, US, 0},
 	{0xFEFCF9DE, SteambotChronicles, JP, 0}, // Ponkotsu Roman Daikatsugeki: Bumpy Trot 
 	{0XE1BF5DCA, SuperManReturns, US, 0},
+	{0XE8F7BAB6, SuperManReturns, EU, 0},
 	{0x06A7506A, SacredBlaze, JP, 0},
 	{0x4CE7FB04, ItadakiStreet, JP, 0},
 	{0x9C712FF0, Jak1, EU, 0},
@@ -526,7 +541,7 @@ CRC::Game CRC::m_games[] =
 	{0x644CFD03, Jak3, US, 0},
 	{0xDF659E77, JakX, EU, 0},
 	{0x3091E6FB, JakX, US, 0},
-	{0x4653CA3E, HarleyDavidson, NoRegion, 0},
+	{0x4653CA3E, HarleyDavidson, US, 0},
 	// Games list for Automatic Mipmapping
 	// Basic mipmapping
 	{0x194C9F38, AceCombatZero, EU, 0},
@@ -542,11 +557,14 @@ CRC::Game CRC::m_games[] =
 	{0xE3E8E893, DestroyAllHumans, EU, 0},
 	{0x42DF8C8C, DestroyAllHumans2, US, 0},
 	{0x743E10C2, DestroyAllHumans2, EU, 0},
+	{0x67C38BAA, FIFA03, US, 0},
 	{0x722BBD62, FIFA03, EU, 0},
 	{0x2BCCF704, FIFA03, EU, 0},
 	{0xCC6AA742, FIFA04, KO, 0},
 	{0x2C6A4E2E, FIFA04, US, 0},
+	{0x684ADFC6, FIFA04, EU, 0},
 	{0x972611BB, FIFA05, US, 0},
+	{0x972719A3, FIFA05, EU, 0},
 	{0x230CB71D, SoulReaver2, US, 0},
 	{0x6F991F52, SoulReaver2, JP, 0},
 	{0x6D8B4CD1, SoulReaver2, EU, 0},
@@ -568,6 +586,11 @@ CRC::Game CRC::m_games[] =
 	{0x8661F7BA, RatchetAndClank5, US, 0}, // Size Matters
 	{0xFCB981D5, RatchetAndClank5, EU, 0}, // Size Matters
 	{0x8634861F, RickyPontingInternationalCricket, EU, 0},
+	{0xA56A0525, Quake3Revolution, US, 0},
+	{0x2064ACE6, Quake3Revolution, EU, 0},
+	{0xDDAC3815, Shox, US, 0},
+	{0x78FFA39F, Shox, EU, 0},
+	{0x3DF10389, Shox, EU, 0},
 	{0x2B58234D, TribesAerialAssault, US, 0},
 	{0x4D22DB95, Whiplash, US, 0},
 	{0xB1BE3E51, Whiplash, EU, 0},
