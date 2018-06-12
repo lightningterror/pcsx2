@@ -382,6 +382,54 @@ float4x4 sample_4p(float4 u)
 	return c;
 }
 
+//////////////////////////////////////////////////////////////////////
+// Depth sampling
+//////////////////////////////////////////////////////////////////////
+#if SHADER_MODEL >= 0x400
+int2 clamp_wrap_uv_depth(int2 uv)
+{
+	int2 uv_out = uv;
+
+	// Keep the full precision
+	// It allow to multiply the ScalingFactor before the 1/16 coeff
+	int4 mask = int4(MskFix) << 4;
+
+	if (PS_WMS == PS_WMT)
+	{
+		if (PS_WMS == 2)
+		{
+			uv_out = clamp(uv, mask.xy, mask.zw);
+		}
+		else if (PS_WMS == 3)
+		{
+			uv_out = (uv & mask.xy) | mask.zw;
+		}
+	}
+	else // PS_WMS != PS_WMT
+	{
+		if (PS_WMS == 2)
+		{
+			uv_out.x = clamp(uv.x, mask.x, mask.z);
+		}
+		else if (PS_WMS == 3)
+		{
+			uv_out.x = (uv.x & mask.x) | mask.z;
+		}
+
+		if (PS_WMT == 2)
+		{
+			uv_out.y = clamp(uv.y, mask.y, mask.w);
+		}
+		else if (PS_WMT == 3)
+		{
+			uv_out.y = (uv.y & mask.y) | mask.w;
+		}
+	}
+
+	return uv_out;
+}
+#endif
+
 float4 sample(float2 st, float q)
 {
 	if(!PS_FST) st /= q;
