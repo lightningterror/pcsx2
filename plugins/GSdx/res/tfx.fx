@@ -383,7 +383,7 @@ float4x4 sample_4p(float4 u)
 	return c;
 }
 
-int fetch_raw_depth(float4 pos : SV_Position)
+/*int fetch_raw_depth(float4 pos : SV_Position)
 {
 	float4 col = Texture.Load(int3((int2)pos.xy, 0));
 	return (int)(col.r * exp2(32.0f));
@@ -392,8 +392,8 @@ int fetch_raw_depth(float4 pos : SV_Position)
 float4 fetch_raw_color(float4 pos : SV_Position)
 {
 	return Texture.Load(int3((int2)pos.xy, 0));
-}
-/*int fetch_raw_depth(int2 xy)
+}*/
+int fetch_raw_depth(int2 xy)
 {
     float4 col = Texture.Load(int3(xy,0));
     return (int)(col.r * exp2(32.0f));
@@ -402,7 +402,7 @@ float4 fetch_raw_color(float4 pos : SV_Position)
 float4 fetch_raw_color(int2 xy)
 {
     return Texture.Load(int3(xy,0));
-}*/
+}
 
 //////////////////////////////////////////////////////////////////////
 // Depth sampling
@@ -457,30 +457,30 @@ int2 clamp_wrap_uv_depth(int2 uv)
 // Channel 1
 float4 fetch_red(int2 xy)
 {
-	float4 rt = fetch_raw_color(int2(input.p.xy));
-	return sample_p(rt.r);
+	float4 rt = fetch_raw_color(xy);
+	return (float4)(rt.r);
 }
-/*
+
 // Channel 2
 float4 fetch_green(int2 xy)
 {
-	float4 rt = fetch_raw_color(int2(input.p.xy));
-	return sample_p(rt.g);
+	float4 rt = fetch_raw_color(xy);
+	return (float4)(rt.g);
 }
 
 // Channel 3
 float4 fetch_blue(int2 xy)
 {
-	float4 rt = fetch_raw_color(int2(input.p.xy));
-	return sample_p(rt.b);
+	float4 rt = fetch_raw_color(xy);
+	return (float4)(rt.b);
 }
 
 // Channel 4
 float4 fetch_alpha(int2 xy)
 {
-	float4 rt = fetch_raw_color(int2(input.p.xy));
-	return sample_p(rt.a);
-}*/
+	float4 rt = fetch_raw_color(xy);
+	return (float4)(rt.a);
+}
 
 #endif
 
@@ -681,7 +681,7 @@ float4 ps_color(PS_INPUT input)
 {
 	datst(input);
 
-	/*if (PS_CHANNEL_FETCH == 1)
+	if (PS_CHANNEL_FETCH == 1)
 	{
 		float4 t = fetch_red(int2(input.p.xy));
 	}
@@ -696,7 +696,7 @@ float4 ps_color(PS_INPUT input)
 	else if (PS_CHANNEL_FETCH == 4)
 	{
 		float4 t = fetch_alpha(int2(input.p.xy));
-	}*/
+	}
 
 	float4 t = sample(input.t.xy, input.t.w);
 
