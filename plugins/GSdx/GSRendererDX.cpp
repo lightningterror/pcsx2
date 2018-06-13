@@ -187,7 +187,16 @@ void GSRendererDX::EmulateChannelShuffle(GSTexture** rt, const GSTextureCache::S
 		} else if (m_context->CLAMP.WMS == 3 && ((m_context->CLAMP.MINU & 0x8) == 0)) {
 			// Read either Red or Green. Let's check the V coordinate. 0-1 is likely top so
 			// red. 2-3 is likely bottom so green (actually depends on texture base pointer offset)
-			throw GSDXRecoverableError();
+			bool green = PRIM->FST && (m_vertex.buff[0].V & 32);
+			if (green && (m_context->FRAME.FBMSK & 0x00FFFFFF) == 0x00FFFFFF) {
+				// Typically used in Terminator 3
+				throw GSDXRecoverableError();
+			} else if (green) {
+				m_ps_sel.channel = 2;
+			} else {
+				// Pop
+				m_ps_sel.channel = 1;
+			}
 		} else {
 			m_channel_shuffle = false;
 		}

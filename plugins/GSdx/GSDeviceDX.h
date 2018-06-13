@@ -191,6 +191,8 @@ public:
 				uint32 shuffle:1;
 				uint32 read_ba:1;
 
+				uint32 channel:3;
+
 				// *** Word 2
 				// Blend and Colclip
 				uint32 clr1:1;
@@ -203,7 +205,7 @@ public:
 				uint32 tcoffsethack:1;
 				uint32 point_sampler:1;
 
-				uint32 _free:32;
+				uint32 _free:29;
 			};
 
 			uint64 key;
