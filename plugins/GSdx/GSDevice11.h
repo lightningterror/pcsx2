@@ -158,6 +158,7 @@ public: // TODO
 	VSConstantBuffer m_vs_cb_cache;
 	GSConstantBuffer m_gs_cb_cache;
 	PSConstantBuffer m_ps_cb_cache;
+	MiscConstantBuffer m_misc_cb_cache;
 
 	bool CreateTextureFX();
 
@@ -219,6 +220,7 @@ public:
 
 	void SetupVS(VSSelector sel, const VSConstantBuffer* cb);
 	void SetupGS(GSSelector sel, const GSConstantBuffer* cb);
+	void SetupCBMisc(const GSVector4i& channel);
 	void SetupPS(PSSelector sel, const PSConstantBuffer* cb, PSSamplerSelector ssel);
 	void SetupOM(OMDepthStencilSelector dssel, OMBlendSelector bsel, uint8 afix);
 

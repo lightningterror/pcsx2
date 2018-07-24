@@ -157,13 +157,19 @@ void GSRendererDX::EmulateChannelShuffle(GSTexture** rt, const GSTextureCache::S
 
 	// First let's check we really have a channel shuffle effect
 	if (m_channel_shuffle) {
-		if (m_game.title == CRC::Tekken5) {
+		if (m_game.title == CRC::GT4 || m_game.title == CRC::GT3 || m_game.title == CRC::GTConcept || m_game.title == CRC::TouristTrophy) {
+			m_ps_sel.channel = 7;
+			m_context->TEX0.TFX = TFX_DECAL;
+			*rt = tex->m_from_target;
+		} else if (m_game.title == CRC::Tekken5) {
 			if (m_context->FRAME.FBW == 1) {
 				// Used in stages: Secret Garden, Acid Rain, Moonlit Wilderness
-				// Skip channel effect, it misses a shader for proper screen effect but at least the top left screen issue isn't appearing anymore 
+				m_ps_sel.channel = 7;
+				m_context->FRAME.FBMSK = 0xFF000000;
 				// 12 pages: 2 calls by channel, 3 channels, 1 blit
 				// Minus current draw call
 				m_skip = 12 * (3 + 3 + 1) - 1;
+				*rt = tex->m_from_target;
 			} else {
 				// Could skip model drawing if wrongly detected
 				m_channel_shuffle = false;
@@ -200,6 +206,30 @@ void GSRendererDX::EmulateChannelShuffle(GSTexture** rt, const GSTextureCache::S
 		} else {
 			m_channel_shuffle = false;
 		}
+	}
+
+	// Effect is really a channel shuffle effect so let's cheat a little
+	if (m_channel_shuffle) {
+		dev->PSSetShaderResource(1, tex->m_from_target);
+
+		// Replace current draw with a fullscreen sprite
+		//
+		// Performance GPU note: it could be wise to reduce the size to
+		// the rendered size of the framebuffer
+
+		GSVertex* s = &m_vertex.buff[0];
+		s[0].XYZ.X = (uint16)(m_context->XYOFFSET.OFX + 0);
+		s[1].XYZ.X = (uint16)(m_context->XYOFFSET.OFX + 16384);
+		s[0].XYZ.Y = (uint16)(m_context->XYOFFSET.OFY + 0);
+		s[1].XYZ.Y = (uint16)(m_context->XYOFFSET.OFY + 16384);
+
+		m_vertex.head = m_vertex.tail = m_vertex.next = 2;
+		m_index.tail = 2;
+
+	} else {
+#ifdef ENABLE_OGL_DEBUG
+		dev->PSSetShaderResource(1, NULL);
+#endif
 	}
 }
 
@@ -582,7 +612,8 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 
 	// rs
 
-	GSVector4i scissor = GSVector4i(GSVector4(rtscale).xyxy() * m_context->scissor.in).rintersect(GSVector4i(rtsize).zwxy());
+	const GSVector4& hacked_scissor = m_channel_shuffle ? GSVector4(0, 0, 1024, 1024) : m_context->scissor.in;
+	GSVector4i scissor = GSVector4i(GSVector4(rtscale).xyxy() * hacked_scissor).rintersect(GSVector4i(rtsize).zwxy());
 
 	dev->OMSetRenderTargets(rt, ds, &scissor);
 	dev->PSSetShaderResource(0, tex ? tex->m_texture : NULL);

@@ -32,6 +32,7 @@ GSDevice11::GSDevice11()
 	memset(&m_vs_cb_cache, 0, sizeof(m_vs_cb_cache));
 	memset(&m_gs_cb_cache, 0, sizeof(m_gs_cb_cache));
 	memset(&m_ps_cb_cache, 0, sizeof(m_ps_cb_cache));
+	memset(&m_misc_cb_cache, 0, sizeof(m_misc_cb_cache));
 
 	FXAA_Compiled = false;
 	ExShader_Compiled = false;
@@ -196,8 +197,8 @@ bool GSDevice11::Create(const std::shared_ptr<GSWnd> &wnd)
 
 	memset(&dsd, 0, sizeof(dsd));
 
-	dsd.DepthEnable = false;
-	dsd.StencilEnable = false;
+	dsd.DepthEnable = true;
+	dsd.StencilEnable = true;
 
 	hr = m_dev->CreateDepthStencilState(&dsd, &m_convert.dss);
 
@@ -353,7 +354,7 @@ bool GSDevice11::Create(const std::shared_ptr<GSWnd> &wnd)
 
 	memset(&dsd, 0, sizeof(dsd));
 
-	dsd.DepthEnable = false;
+	dsd.DepthEnable = true;
 	dsd.StencilEnable = true;
 	dsd.StencilReadMask = 1;
 	dsd.StencilWriteMask = 1;
@@ -1280,6 +1281,11 @@ void GSDevice11::OMSetRenderTargets(GSTexture* rt, GSTexture* ds, const GSVector
 
 		m_ctx->RSSetScissorRects(1, r);
 	}
+}
+
+void GSDevice11::SetupCBMisc(const GSVector4i& channel)
+{
+	m_misc_cb_cache.ChannelShuffle = channel;
 }
 
 void GSDevice11::OMSetRenderTargets(const GSVector2i& rtsize, int count, ID3D11UnorderedAccessView** uav, uint32* counters, const GSVector4i* scissor)

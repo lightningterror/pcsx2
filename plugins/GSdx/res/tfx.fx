@@ -115,6 +115,11 @@ cbuffer cb2
 	float2 PointSize;
 };
 
+cbuffer cb4
+{
+	int4 ChannelShuffle;
+};
+
 float4 sample_c(float2 uv)
 {
 	if (ATI_SUCKS && PS_POINT_SAMPLER)
@@ -482,6 +487,23 @@ float4 fetch_alpha(int2 xy)
 	return (float4)(rt.a);
 }
 
+// Channel 6
+float4 fetch_gXbY(int2 xy)
+{
+	int4 rt = int4(fetch_raw_color(xy) * 255.0f);
+	int green = (rt.g >> ChannelShuffle.w) & ChannelShuffle.z;
+	int blue = (rt.b << ChannelShuffle.y) & ChannelShuffle.x;
+	return (float4)(green | blue);
+}
+
+// Channel 7
+float4 fetch_rgb(int2 xy)
+{
+	float4 rt = fetch_raw_color(xy);
+	float4 c = float4(sample_p(rt.r).r, sample_p(rt.g).g, sample_p(rt.b).b, 1.0f);
+	return c * 255.0f;
+}
+
 #endif
 
 float4 sample(float2 st, float q)
@@ -696,6 +718,14 @@ float4 ps_color(PS_INPUT input)
 	else if (PS_CHANNEL_FETCH == 4)
 	{
 		float4 t = fetch_alpha(int2(input.p.xy));
+	}
+	else if (PS_CHANNEL_FETCH == 6)
+	{
+		float4 t = fetch_gXbY(int2(input.p.xy));
+	}
+	else if (PS_CHANNEL_FETCH == 7)
+	{
+		float4 t = fetch_rgb(int2(input.p.xy));
 	}
 
 	float4 t = sample(input.t.xy, input.t.w);
