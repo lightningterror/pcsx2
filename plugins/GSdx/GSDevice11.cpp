@@ -408,6 +408,11 @@ bool GSDevice11::Create(const std::shared_ptr<GSWnd> &wnd)
 
 	m_dev->CreateBlendState(&blend, &m_date.bs);
 
+	// FIXME - font for OSD
+	/*GSVector2i tex_font = m_osd.get_texture_font_size();
+	m_font = new GSTexture11(GSTexture11::Texture, tex_font.x, tex_font.y, DXGI_FORMAT_A8_UNORM, false);
+	*/
+
 	// Exclusive/Fullscreen flip, issued for legacy (managed) windows only.  GSopen2 style
 	// emulators will issue the flip themselves later on.
 
@@ -773,6 +778,36 @@ void GSDevice11::StretchRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 	EndScene();
 
 	PSSetShaderResources(NULL, NULL);
+}
+
+void GSDevice11::RenderOsd(GSTexture* dt)
+{
+	BeginScene();
+
+	//m_shader->BindPipeline(m_convert.ps[ShaderConvert_OSD]); // Fixme shader not yet implemented
+
+	OMSetDepthStencilState(m_convert.dss, 0); // Fixme check code, is 0 correct ? gl doesn't have it
+	//OMSetBlendState((uint8)GSDevice11::m_blendMapD3D9); // Fixme check code
+	OMSetRenderTargets(dt, NULL); // check Null code, gl doesn't have it
+
+	if(m_osd.m_texture_dirty) {
+		m_osd.upload_texture_atlas(m_font);
+	}
+
+	PSSetShaderResource(0, m_font);
+	PSSetSamplerState(m_convert.pt, NULL);
+
+	IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	// Note scaling could also be done in shader (require gl3/dx10)
+	size_t count = m_osd.Size();
+	//GSVertexPT1* dst = (GSVertexPT1*)m_ctx->MapVB(count); // Fixme alternative to MapVB
+	//count = m_osd.GeneratePrimitives(dst, count);
+	//m_ctx->UnmapVB(); // Fixme alternative to UnmapVB
+
+	DrawPrimitive();
+
+	EndScene();
 }
 
 void GSDevice11::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, const GSRegPMODE& PMODE, const GSRegEXTBUF& EXTBUF, const GSVector4& c)

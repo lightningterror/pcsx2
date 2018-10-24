@@ -39,6 +39,7 @@ class GSDevice11 : public GSDeviceDX
 	void DoFXAA(GSTexture* sTex, GSTexture* dTex);
 	void DoShadeBoost(GSTexture* sTex, GSTexture* dTex);
 	void DoExternalFX(GSTexture* sTex, GSTexture* dTex);
+	void RenderOsd(GSTexture* dt);
 
 	void InitExternalFX();
 	void InitFXAA(); // Bug workaround! Stack corruption? Heap corruption? No idea
@@ -157,6 +158,8 @@ public: // TODO
 	VSConstantBuffer m_vs_cb_cache;
 	GSConstantBuffer m_gs_cb_cache;
 	PSConstantBuffer m_ps_cb_cache;
+
+	GSTexture11* m_font;
 
 	bool CreateTextureFX();
 
