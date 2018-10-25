@@ -408,10 +408,8 @@ bool GSDevice11::Create(const std::shared_ptr<GSWnd> &wnd)
 
 	m_dev->CreateBlendState(&blend, &m_date.bs);
 
-	// FIXME - font for OSD
-	/*GSVector2i tex_font = m_osd.get_texture_font_size();
-	m_font = new GSTexture11(GSTexture11::Texture, tex_font.x, tex_font.y, DXGI_FORMAT_A8_UNORM, false);
-	*/
+	GSVector2i tex_font = m_osd.get_texture_font_size();
+	m_font = CreateSurface(GSTexture::Texture, tex_font.x, tex_font.y, false, DXGI_FORMAT_A8_UNORM);
 
 	// Exclusive/Fullscreen flip, issued for legacy (managed) windows only.  GSopen2 style
 	// emulators will issue the flip themselves later on.
@@ -801,6 +799,12 @@ void GSDevice11::RenderOsd(GSTexture* dt, ID3D11BlendState* bs)
 
 	// Note scaling could also be done in shader (require gl3/dx10)
 	size_t count = m_osd.Size();
+
+	void* dst = NULL;
+	IAMapVertexBuffer(&dst, sizeof(GSVertexPT1), count);
+
+	count = m_osd.GeneratePrimitives((GSVertexPT1*)dst, count);
+	IAUnmapVertexBuffer();
 	//GSVertexPT1* dst = (GSVertexPT1*)m_ctx->MapVB(count); // Fixme alternative to MapVB
 	//count = m_osd.GeneratePrimitives(dst, count);
 	//m_ctx->UnmapVB(); // Fixme alternative to UnmapVB
