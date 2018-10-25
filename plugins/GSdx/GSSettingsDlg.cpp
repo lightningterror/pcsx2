@@ -435,7 +435,7 @@ void GSSettingsDlg::UpdateControls()
 		EnableWindow(GetDlgItem(m_hWnd, IDC_HACKSBUTTON), hw && IsDlgButtonChecked(m_hWnd, IDC_HACKS_ENABLED));
 
 		// OSD Configuration
-		EnableWindow(GetDlgItem(m_hWnd, IDC_OSDBUTTON), ogl);
+		EnableWindow(GetDlgItem(m_hWnd, IDC_OSDBUTTON), dx11 || ogl);
 
 		// Shader Configuration
 		EnableWindow(GetDlgItem(m_hWnd, IDC_SHADEBUTTON), !null);
