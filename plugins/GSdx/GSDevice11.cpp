@@ -780,14 +780,14 @@ void GSDevice11::StretchRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 	PSSetShaderResources(NULL, NULL);
 }
 
-void GSDevice11::RenderOsd(GSTexture* dt)
+void GSDevice11::RenderOsd(GSTexture* dt, ID3D11BlendState* bs)
 {
 	BeginScene();
 
 	//m_shader->BindPipeline(m_convert.ps[ShaderConvert_OSD]); // Fixme shader not yet implemented
 
-	OMSetDepthStencilState(m_convert.dss, 0); // Fixme check code, is 0 correct ? gl doesn't have it
-	//OMSetBlendState((uint8)GSDevice11::m_blendMapD3D9); // Fixme check code
+	OMSetDepthStencilState(m_convert.dss, 0); // Fixme check code, is 0 correct ? gl doesn't have it, maybe use 1 ?
+	OMSetBlendState(bs, 0); // Fixme check code. Is 0 correct ? gl doesn't have it, maybe use 1 ?
 	OMSetRenderTargets(dt, NULL); // check Null code, gl doesn't have it
 
 	if(m_osd.m_texture_dirty) {
