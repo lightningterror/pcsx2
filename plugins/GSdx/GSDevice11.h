@@ -39,7 +39,7 @@ class GSDevice11 : public GSDeviceDX
 	void DoFXAA(GSTexture* sTex, GSTexture* dTex);
 	void DoShadeBoost(GSTexture* sTex, GSTexture* dTex);
 	void DoExternalFX(GSTexture* sTex, GSTexture* dTex);
-	void RenderOsd(GSTexture* dt, ID3D11BlendState* bs);
+	void RenderOsd(GSTexture* dt);
 
 	void InitExternalFX();
 	void InitFXAA(); // Bug workaround! Stack corruption? Heap corruption? No idea

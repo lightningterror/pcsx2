@@ -409,7 +409,7 @@ bool GSDevice11::Create(const std::shared_ptr<GSWnd> &wnd)
 	m_dev->CreateBlendState(&blend, &m_date.bs);
 
 	GSVector2i tex_font = m_osd.get_texture_font_size();
-	m_font = CreateSurface(GSTexture::Texture, tex_font.x, tex_font.y, false, DXGI_FORMAT_A8_UNORM);
+	m_font = CreateSurface(GSTexture::Texture, tex_font.x, tex_font.y, false, DXGI_FORMAT_R8_UNORM);
 
 	// Exclusive/Fullscreen flip, issued for legacy (managed) windows only.  GSopen2 style
 	// emulators will issue the flip themselves later on.
@@ -778,23 +778,27 @@ void GSDevice11::StretchRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 	PSSetShaderResources(NULL, NULL);
 }
 
-void GSDevice11::RenderOsd(GSTexture* dt, ID3D11BlendState* bs)
+void GSDevice11::RenderOsd(GSTexture* dt)
 {
 	BeginScene();
 
-	//m_shader->BindPipeline(m_convert.ps[ShaderConvert_OSD]); // Fixme shader not yet implemented
-
+	// om
 	OMSetDepthStencilState(m_convert.dss, 0); // Fixme check code, is 0 correct ? gl doesn't have it, maybe use 1 ?
-	OMSetBlendState(bs, 0); // Fixme check code. Is 0 correct ? gl doesn't have it, maybe use 1 ?
-	OMSetRenderTargets(dt, NULL); // check Null code, gl doesn't have it
+	OMSetBlendState(m_merge.bs, 0); // alpha blend
+	OMSetRenderTargets(dt, NULL);
 
 	if(m_osd.m_texture_dirty) {
 		m_osd.upload_texture_atlas(m_font);
 	}
 
+	// ps
 	PSSetShaderResource(0, m_font);
+	//PSSetShaderResources(m_font, NULL); More or less the same as above
 	PSSetSamplerState(m_convert.pt, NULL);
+	//PSSetShader(m_convert.ps[0], NULL); FIXME: port shader, maybe required?
 
+	// ia
+	IASetInputLayout(m_convert.il);
 	IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 	// Note scaling could also be done in shader (require gl3/dx10)
@@ -805,9 +809,18 @@ void GSDevice11::RenderOsd(GSTexture* dt, ID3D11BlendState* bs)
 
 	count = m_osd.GeneratePrimitives((GSVertexPT1*)dst, count);
 	IAUnmapVertexBuffer();
-	//GSVertexPT1* dst = (GSVertexPT1*)m_ctx->MapVB(count); // Fixme alternative to MapVB
-	//count = m_osd.GeneratePrimitives(dst, count);
-	//m_ctx->UnmapVB(); // Fixme alternative to UnmapVB
+
+	// Does more or less the same thing as above
+
+	//std::vector<GSVertexPT1> dst(count);
+	//count = m_osd.GeneratePrimitives(dst.data(), count);
+	//IASetVertexBuffer(dst.data(), sizeof(GSVertexPT1), count);
+
+	// vs
+	VSSetShader(m_convert.vs, NULL); // FIXME: required in dx11?
+
+	//gs
+	GSSetShader(NULL, NULL); // FIXME: required in dx11?
 
 	DrawPrimitive();
 
