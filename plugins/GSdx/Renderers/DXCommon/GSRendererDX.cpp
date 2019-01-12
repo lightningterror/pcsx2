@@ -640,6 +640,8 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 	bool DATE = m_context->TEST.DATE && m_context->FRAME.PSM != PSM_PSMCT24;
 	bool DATE_one = false;
 
+	bool hdr_colclip = false;
+
 	bool ate_first_pass = m_context->TEST.DoFirstPass();
 	bool ate_second_pass = m_context->TEST.DoSecondPass();
 
@@ -718,12 +720,15 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 
 	if (!IsOpaque())
 	{
+		const GIFRegALPHA& ALPHA = m_context->ALPHA;
+		bool sw_blending = false;
+
 		m_om_bsel.abe = PRIM->ABE || PRIM->AA1 && m_vt.m_primclass == GS_LINE_CLASS;
 
-		m_om_bsel.a = m_context->ALPHA.A;
-		m_om_bsel.b = m_context->ALPHA.B;
-		m_om_bsel.c = m_context->ALPHA.C;
-		m_om_bsel.d = m_context->ALPHA.D;
+		m_om_bsel.a = ALPHA.A;
+		m_om_bsel.b = ALPHA.B;
+		m_om_bsel.c = ALPHA.C;
+		m_om_bsel.d = ALPHA.D;
 
 		if (m_env.PABE.PABE)
 		{
@@ -739,6 +744,41 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 				//Breath of Fire Dragon Quarter triggers this in battles. Graphics are fine though.
 				//ASSERT(0);
 			}
+		}
+
+		uint8 blend_index = uint8(((ALPHA.A * 3 + ALPHA.B) * 3 + ALPHA.C) * 3 + ALPHA.D);
+		int blend_flag = GSDeviceDX::m_blendMapD3D11[blend_index].bogus;
+
+		bool accumulation_blend = !!(blend_flag & BLEND_ACCU);
+
+		// Color clip
+		if (m_env.COLCLAMP.CLAMP == 0 && rt)
+		{
+			if (accumulation_blend)
+			{
+				// A fast algo that requires 2 passes
+				fprintf(stderr, "COLCLIP Fast HDR mode ENABLED\n");
+				hdr_colclip = true;
+				sw_blending = true; // Enable sw blending for the HDR algo
+			}
+			else
+			{
+				fprintf(stderr, "COLCLIP free HDR ENABLED\n");
+				//ASSERT(sw_blending);
+				hdr_colclip = true;
+
+			}
+		}
+#if 0
+		fprintf(stderr, "BLEND_INFO: %d/%d/%d/%d. Clamp:%d. Prim:%d number %d (drawlist %d) (sw %d)\n",
+			ALPHA.A, ALPHA.B, ALPHA.C, ALPHA.D, m_env.COLCLAMP.CLAMP, m_vt.m_primclass, m_vertex.next, sw_blending);
+#endif
+		if (sw_blending)
+		{
+			// 16 bit format support only.
+			// Castlevania, Crash of the Titans (possibly others) hit this path to render shadows.
+			if (m_om_bsel.a == 1 || m_om_bsel.b == 1 || m_om_bsel.d == 1)
+				m_ps_sel.sw_blend = 1;
 		}
 	}
 
@@ -776,10 +816,8 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 
 	//
 
-	bool hdr_colclip = m_env.COLCLAMP.CLAMP == 0 && rt;
 	if (hdr_colclip)
 	{
-		// fprintf(stderr, "COLCLIP HDR mode ENABLED\n");
 		GSVector4 dRect(ComputeBoundingBox(rtscale, rtsize));
 		GSVector4 sRect = dRect / GSVector4(rtsize.x, rtsize.y).xyxy();
 		hdr_rt = dev->CreateRenderTarget(rtsize.x, rtsize.y, false, DXGI_FORMAT_R32G32B32A32_FLOAT);
