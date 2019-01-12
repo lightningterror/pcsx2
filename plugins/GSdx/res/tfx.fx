@@ -34,6 +34,7 @@
 #define PS_SPRITEHACK 0
 #define PS_TCOFFSETHACK 0
 #define PS_POINT_SAMPLER 0
+#define PS_SW_BLEND 0
 #define PS_SHUFFLE 0
 #define PS_READ_BA 0
 #define PS_DFMT 0
@@ -887,6 +888,17 @@ PS_OUTPUT ps_main(PS_INPUT input)
 				c.ga = (float2)(float((denorm_c.g & 0x7Fu) | (denorm_TA.y & 0x80u)) / 255.0f);
 			else
 				c.ga = (float2)(float((denorm_c.g & 0x7Fu) | (denorm_TA.x & 0x80u)) / 255.0f);
+		}
+	}
+
+	if (PS_SW_BLEND)
+	{
+		if (PS_DFMT == FMT_16)
+		{
+			// In 16 bits format, only 5 bits of colors are used. It impacts shadows computation of Castlevania
+
+			// Basically we want to do 'c.rgb &= 0xF8' in denormalized mode
+			c.rgb = float3((uint3)((c.rgb * 255.0f) + 256.5f) & (uint3)(0xF8)) / 255.0f;
 		}
 	}
 
