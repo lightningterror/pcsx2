@@ -25,6 +25,8 @@
 #include "Renderers/Common/GSDevice.h"
 #include "GSAlignedClass.h"
 
+#define BLEND_ACCU (0x800) // Allow to use a mix of SW and HW blending to keep the best of the 2 worlds
+
 class GSDeviceDX : public GSDevice
 {
 protected:
