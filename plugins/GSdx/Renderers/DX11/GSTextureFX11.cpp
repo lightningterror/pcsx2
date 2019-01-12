@@ -207,7 +207,7 @@ void GSDevice11::SetupPS(PSSelector sel, const PSConstantBuffer* cb, PSSamplerSe
 
 	if(i == m_ps.end())
 	{
-		std::string str[25];
+		std::string str[26];
 
 		str[0] = format("%d", sel.fst);
 		str[1] = format("%d", sel.wms);
@@ -225,15 +225,16 @@ void GSDevice11::SetupPS(PSSelector sel, const PSConstantBuffer* cb, PSSamplerSe
 		str[13] = format("%d", sel.spritehack);
 		str[14] = format("%d", sel.tcoffsethack);
 		str[15] = format("%d", sel.point_sampler);
-		str[16] = format("%d", sel.shuffle);
-		str[17] = format("%d", sel.read_ba);
-		str[18] = format("%d", sel.channel);
-		str[19] = format("%d", sel.tales_of_abyss_hle);
-		str[20] = format("%d", sel.urban_chaos_hle);
-		str[21] = format("%d", sel.dfmt);
-		str[22] = format("%d", sel.depth_fmt);
-		str[23] = format("%d", sel.fmt >> 2);
-		str[24] = format("%d", m_upscale_multiplier);
+		str[16] = format("%d", sel.sw_blend);
+		str[17] = format("%d", sel.shuffle);
+		str[18] = format("%d", sel.read_ba);
+		str[19] = format("%d", sel.channel);
+		str[20] = format("%d", sel.tales_of_abyss_hle);
+		str[21] = format("%d", sel.urban_chaos_hle);
+		str[22] = format("%d", sel.dfmt);
+		str[23] = format("%d", sel.depth_fmt);
+		str[24] = format("%d", sel.fmt >> 2);
+		str[25] = format("%d", m_upscale_multiplier);
 
 		D3D_SHADER_MACRO macro[] =
 		{
@@ -253,15 +254,16 @@ void GSDevice11::SetupPS(PSSelector sel, const PSConstantBuffer* cb, PSSamplerSe
 			{"PS_SPRITEHACK", str[13].c_str()},
 			{"PS_TCOFFSETHACK", str[14].c_str()},
 			{"PS_POINT_SAMPLER", str[15].c_str()},
-			{"PS_SHUFFLE", str[16].c_str() },
-			{"PS_READ_BA", str[17].c_str() },
-			{"PS_CHANNEL_FETCH", str[18].c_str() },
-			{"PS_TALES_OF_ABYSS_HLE", str[19].c_str() },
-			{"PS_URBAN_CHAOS_HLE", str[20].c_str() },
-			{"PS_DFMT", str[21].c_str() },
-			{"PS_DEPTH_FMT", str[22].c_str() },
-			{"PS_PAL_FMT", str[23].c_str() },
-			{"PS_SCALE_FACTOR", str[24].c_str() },
+			{"PS_SW_BLEND", str[16].c_str() },
+			{"PS_SHUFFLE", str[17].c_str() },
+			{"PS_READ_BA", str[18].c_str() },
+			{"PS_CHANNEL_FETCH", str[19].c_str() },
+			{"PS_TALES_OF_ABYSS_HLE", str[20].c_str() },
+			{"PS_URBAN_CHAOS_HLE", str[21].c_str() },
+			{"PS_DFMT", str[22].c_str() },
+			{"PS_DEPTH_FMT", str[23].c_str() },
+			{"PS_PAL_FMT", str[24].c_str() },
+			{"PS_SCALE_FACTOR", str[25].c_str() },
 			{NULL, NULL},
 		};
 

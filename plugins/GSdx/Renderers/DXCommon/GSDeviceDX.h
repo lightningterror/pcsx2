@@ -201,6 +201,7 @@ public:
 
 				// *** Word 2
 				// Blend and Colclip
+				uint32 sw_blend:1;
 				uint32 clr1:1;
 
 				// Others ways to fetch the texture
@@ -214,7 +215,7 @@ public:
 				uint32 tales_of_abyss_hle:1;
 				uint32 point_sampler:1;
 
-				uint32 _free:28;
+				uint32 _free:27;
 			};
 
 			uint64 key;
