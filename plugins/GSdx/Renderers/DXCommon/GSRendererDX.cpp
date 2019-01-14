@@ -716,14 +716,15 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 
 	// Blend
 
+	GIFRegALPHA ALPHA = m_context->ALPHA;
 	if (!IsOpaque())
 	{
 		m_om_bsel.abe = PRIM->ABE || PRIM->AA1 && m_vt.m_primclass == GS_LINE_CLASS;
 
-		m_om_bsel.a = m_context->ALPHA.A;
-		m_om_bsel.b = m_context->ALPHA.B;
-		m_om_bsel.c = m_context->ALPHA.C;
-		m_om_bsel.d = m_context->ALPHA.D;
+		m_om_bsel.a = ALPHA.A;
+		m_om_bsel.b = ALPHA.B;
+		m_om_bsel.c = ALPHA.C;
+		m_om_bsel.d = ALPHA.D;
 
 		if (m_env.PABE.PABE)
 		{
@@ -746,11 +747,10 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 
 	if (m_ps_sel.dfmt == 1)
 	{
-		if (m_context->ALPHA.C == 1)
+		if (ALPHA.C == 1)
 		{
-			// 24 bits no alpha channel so use 1.0f fix factor as equivalent
-			m_context->ALPHA.C = 2;
-			afix = 0x00000001;
+			ALPHA.C = 2;
+			afix = 0x80;
 		}
 		// Disable writing of the alpha channel
 		m_om_bsel.wa = 0;
