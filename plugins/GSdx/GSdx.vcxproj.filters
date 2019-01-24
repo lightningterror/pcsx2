@@ -96,10 +96,7 @@
     <ClCompile Include="Renderers\Common\GSRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Renderers\DXCommon\GSRendererDX.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Renderers\DX11\GSRendererDX11.cpp">
+    <ClCompile Include="Renderers\DX11\GSRenderer11.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Renderers\HW\GSRendererHW.cpp">
@@ -362,10 +359,7 @@
     <ClInclude Include="Renderers\Common\GSRenderer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Renderers\DXCommon\GSRendererDX.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderers\DX11\GSRendererDX11.h">
+    <ClInclude Include="Renderers\DX11\GSRenderer11.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Renderers\HW\GSRendererHW.h">

@@ -32,7 +32,7 @@
 
 #ifdef _WIN32
 
-#include "Renderers/DX11/GSRendererDX11.h"
+#include "Renderers/DX11/GSRenderer11.h"
 #include "Renderers/DX11/GSDevice11.h"
 #include "Window/GSWndDX.h"
 #include "Window/GSWndWGL.h"
@@ -387,7 +387,7 @@ static int _GSopen(void** dsp, const char* title, GSRendererType renderer, int t
 			default:
 #ifdef _WIN32
 			case GSRendererType::DX1011_HW:
-				s_gs = (GSRenderer*)new GSRendererDX11();
+				s_gs = (GSRenderer*)new GSRenderer11();
 				s_renderer_type = " HW";
 				break;
 #endif

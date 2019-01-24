@@ -22,11 +22,10 @@
 #pragma once
 
 #include "Renderers/HW/GSRendererHW.h"
-#include "Renderers/DX11/GSDevice11.h"
+#include "GSTextureCache11.h"
 #include "Renderers/HW/GSVertexHW.h"
-#include "Renderers/DX11/GSTextureCache11.h"
 
-class GSRendererDX : public GSRendererHW
+class GSRenderer11 : public GSRendererHW
 {
 	bool UserHacks_AlphaHack;
 	bool UserHacks_AlphaStencil;
@@ -54,8 +53,8 @@ protected:
 	GSDeviceDX::GSConstantBuffer gs_cb;
 
 public:
-	GSRendererDX();
-	virtual ~GSRendererDX() {};
+	GSRenderer11();
+	virtual ~GSRenderer11() {};
 
 	bool CreateDevice(GSDevice* dev);
 };

@@ -20,9 +20,9 @@
  */
 
 #include "stdafx.h"
-#include "GSRendererDX.h"
+#include "GSRenderer11.h"
 
-GSRendererDX::GSRendererDX()
+GSRenderer11::GSRenderer11()
 	: GSRendererHW(new GSTextureCache11(this))
 {
 	if (theApp.GetConfigB("UserHacks"))
@@ -39,12 +39,12 @@ GSRendererDX::GSRendererDX()
 	ResetStates();
 }
 
-bool GSRendererDX::CreateDevice(GSDevice* dev)
+bool GSRenderer11::CreateDevice(GSDevice* dev)
 {
 	return GSRenderer::CreateDevice(dev);
 }
 
-void GSRendererDX::SetupIA(const float& sx, const float& sy)
+void GSRenderer11::SetupIA(const float& sx, const float& sy)
 {
 	GSDevice11* dev = (GSDevice11*)m_dev;
 
@@ -108,7 +108,7 @@ void GSRendererDX::SetupIA(const float& sx, const float& sy)
 	dev->IASetPrimitiveTopology(t);
 }
 
-void GSRendererDX::EmulateAtst(const int pass, const GSTextureCache::Source* tex)
+void GSRenderer11::EmulateAtst(const int pass, const GSTextureCache::Source* tex)
 {
 	static const uint32 inverted_atst[] = {ATST_ALWAYS, ATST_NEVER, ATST_GEQUAL, ATST_GREATER, ATST_NOTEQUAL, ATST_LESS, ATST_LEQUAL, ATST_EQUAL};
 	int atst = (pass == 2) ? inverted_atst[m_context->TEST.ATST] : m_context->TEST.ATST;
@@ -159,7 +159,7 @@ void GSRendererDX::EmulateAtst(const int pass, const GSTextureCache::Source* tex
 	}
 }
 
-void GSRendererDX::EmulateZbuffer()
+void GSRenderer11::EmulateZbuffer()
 {
 	if (m_context->TEST.ZTE)
 	{
@@ -216,7 +216,7 @@ void GSRendererDX::EmulateZbuffer()
 	}
 }
 
-void GSRendererDX::EmulateTextureShuffleAndFbmask()
+void GSRenderer11::EmulateTextureShuffleAndFbmask()
 {
 	size_t count = m_vertex.next;
 	GSVertex* v = &m_vertex.buff[0];
@@ -352,7 +352,7 @@ void GSRendererDX::EmulateTextureShuffleAndFbmask()
 	}
 }
 
-void GSRendererDX::EmulateChannelShuffle(GSTexture** rt, const GSTextureCache::Source* tex)
+void GSRenderer11::EmulateChannelShuffle(GSTexture** rt, const GSTextureCache::Source* tex)
 {
 	GSDevice11* dev = (GSDevice11*)m_dev;
 
@@ -511,7 +511,7 @@ void GSRendererDX::EmulateChannelShuffle(GSTexture** rt, const GSTextureCache::S
 	}
 }
 
-void GSRendererDX::EmulateTextureSampler(const GSTextureCache::Source* tex)
+void GSRenderer11::EmulateTextureSampler(const GSTextureCache::Source* tex)
 {
 	const GSLocalMemory::psm_t &psm = GSLocalMemory::m_psm[m_context->TEX0.PSM];
 	const GSLocalMemory::psm_t &cpsm = psm.pal > 0 ? GSLocalMemory::m_psm[m_context->TEX0.CPSM] : psm;
@@ -684,7 +684,7 @@ void GSRendererDX::EmulateTextureSampler(const GSTextureCache::Source* tex)
 	m_ps_ssel.ltf = bilinear && !shader_emulated_sampler;
 }
 
-void GSRendererDX::ResetStates()
+void GSRenderer11::ResetStates()
 {
 	m_vs_sel.key = 0;
 	m_gs_sel.key = 0;
@@ -695,7 +695,7 @@ void GSRendererDX::ResetStates()
 	m_om_dssel.key = 0;
 }
 
-void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* tex)
+void GSRenderer11::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* tex)
 {
 	GSTexture* hdr_rt = NULL;
 
@@ -871,7 +871,6 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 
 	if (rt && rt->LikelyOffset && m_userHacks_HPO == 1)
 	{
-		
 		ox2 *= rt->OffsetHack_modx;
 		oy2 *= rt->OffsetHack_mody;
 	}
@@ -1034,9 +1033,13 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 	GSVector4i scissor = GSVector4i(GSVector4(rtscale).xyxy() * hacked_scissor).rintersect(GSVector4i(rtsize).zwxy());
 
 	if (hdr_rt)
+	{
 		dev->OMSetRenderTargets(hdr_rt, ds, &scissor);
+	}
 	else
+	{
 		dev->OMSetRenderTargets(rt, ds, &scissor);
+	}
 
 	dev->PSSetShaderResource(0, tex ? tex->m_texture : NULL);
 	dev->PSSetShaderResource(1, tex ? tex->m_palette : NULL);
