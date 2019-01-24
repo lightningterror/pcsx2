@@ -21,7 +21,6 @@
 
 #include "stdafx.h"
 #include "GSRendererDX.h"
-#include "GSDeviceDX.h"
 
 GSRendererDX::GSRendererDX(GSTextureCache* tc, const GSVector2& pixelcenter)
 	: GSRendererHW(tc)
@@ -43,6 +42,70 @@ GSRendererDX::GSRendererDX(GSTextureCache* tc, const GSVector2& pixelcenter)
 
 GSRendererDX::~GSRendererDX()
 {
+}
+
+void GSRendererDX::SetupIA(const float& sx, const float& sy)
+{
+	GSDevice11* dev = (GSDevice11*)m_dev;
+
+	D3D11_PRIMITIVE_TOPOLOGY t;
+
+	bool unscale_pt_ln = m_userHacks_enabled_unscale_ptln && (GetUpscaleMultiplier() != 1);
+
+	switch (m_vt.m_primclass)
+	{
+	case GS_POINT_CLASS:
+		if (unscale_pt_ln)
+		{
+			m_gs_sel.point = 1;
+			gs_cb.PointSize = GSVector2(16.0f * sx, 16.0f * sy);
+		}
+
+		t = D3D11_PRIMITIVE_TOPOLOGY_POINTLIST;
+		break;
+	case GS_LINE_CLASS:
+		if (unscale_pt_ln)
+		{
+			m_gs_sel.line = 1;
+			gs_cb.PointSize = GSVector2(16.0f * sx, 16.0f * sy);
+		}
+
+		t = D3D11_PRIMITIVE_TOPOLOGY_LINELIST;
+
+		break;
+	case GS_SPRITE_CLASS:
+		t = D3D11_PRIMITIVE_TOPOLOGY_LINELIST;
+		break;
+	case GS_TRIANGLE_CLASS:
+
+		t = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+		break;
+	default:
+		__assume(0);
+	}
+
+	void* ptr = NULL;
+
+	if (dev->IAMapVertexBuffer(&ptr, sizeof(GSVertex), m_vertex.next))
+	{
+		GSVector4i::storent(ptr, m_vertex.buff, sizeof(GSVertex) * m_vertex.next);
+
+		if (UserHacks_WildHack && !isPackedUV_HackFlag)
+		{
+			GSVertex* RESTRICT d = (GSVertex*)ptr;
+
+			for (unsigned int i = 0; i < m_vertex.next; i++)
+			{
+				if (PRIM->TME && PRIM->FST) d[i].UV &= 0x3FEF3FEF;
+			}
+		}
+
+		dev->IAUnmapVertexBuffer();
+	}
+
+	dev->IASetIndexBuffer(m_index.buff, m_index.tail);
+	dev->IASetPrimitiveTopology(t);
 }
 
 void GSRendererDX::EmulateAtst(const int pass, const GSTextureCache::Source* tex)
@@ -291,6 +354,8 @@ void GSRendererDX::EmulateTextureShuffleAndFbmask()
 
 void GSRendererDX::EmulateChannelShuffle(GSTexture** rt, const GSTextureCache::Source* tex)
 {
+	GSDevice11* dev = (GSDevice11*)m_dev;
+
 	// Uncomment to disable HLE emulation (allow to trace the draw call)
 	// m_channel_shuffle = false;
 
@@ -647,7 +712,7 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 	vs_cb.Texture_Scale_Offset = GSVector4(0.0f);
 
 	ASSERT(m_dev != NULL);
-	dev = (GSDeviceDX*)m_dev;
+	GSDevice11* dev = (GSDevice11*)m_dev;
 
 	// HLE implementation of the channel selection effect
 	//

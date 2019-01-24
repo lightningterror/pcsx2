@@ -22,7 +22,7 @@
 #pragma once
 
 #include "Renderers/HW/GSRendererHW.h"
-#include "GSDeviceDX.h"
+#include "Renderers/DX11/GSDevice11.h"
 
 class GSRendererDX : public GSRendererHW
 {
@@ -33,15 +33,13 @@ class GSRendererDX : public GSRendererHW
 
 protected:
 	void ResetStates();
+	void SetupIA(const float& sx, const float& sy);
 	void EmulateAtst(const int pass, const GSTextureCache::Source* tex);
 	void EmulateZbuffer();
 	void EmulateTextureShuffleAndFbmask();
 	void EmulateChannelShuffle(GSTexture** rt, const GSTextureCache::Source* tex);
 	void EmulateTextureSampler(const GSTextureCache::Source* tex);
 	virtual void DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* tex);
-	virtual void SetupIA(const float& sx, const float& sy) = 0;
-
-	GSDeviceDX* dev;
 
 	GSDeviceDX::VSSelector m_vs_sel;
 	GSDeviceDX::GSSelector m_gs_sel;

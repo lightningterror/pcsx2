@@ -27,9 +27,6 @@
 
 class GSRendererDX11 : public GSRendererDX
 {
-protected:
-	void SetupIA(const float& sx, const float& sy);
-
 public:
 	GSRendererDX11();
 	virtual ~GSRendererDX11() {}
