@@ -23,11 +23,11 @@
 
 #include "Renderers/HW/GSRendererHW.h"
 #include "Renderers/DX11/GSDevice11.h"
+#include "Renderers/HW/GSVertexHW.h"
+#include "Renderers/DX11/GSTextureCache11.h"
 
 class GSRendererDX : public GSRendererHW
 {
-	GSVector2 m_pixelcenter;
-
 	bool UserHacks_AlphaHack;
 	bool UserHacks_AlphaStencil;
 
@@ -54,7 +54,8 @@ protected:
 	GSDeviceDX::GSConstantBuffer gs_cb;
 
 public:
-	GSRendererDX(GSTextureCache* tc, const GSVector2& pixelcenter = GSVector2(0));
-	virtual ~GSRendererDX();
+	GSRendererDX();
+	virtual ~GSRendererDX() {};
 
+	bool CreateDevice(GSDevice* dev);
 };

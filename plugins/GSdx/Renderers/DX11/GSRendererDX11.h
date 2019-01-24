@@ -22,14 +22,3 @@
 #pragma once
 
 #include "Renderers/DXCommon/GSRendererDX.h"
-#include "Renderers/HW/GSVertexHW.h"
-#include "GSTextureCache11.h"
-
-class GSRendererDX11 : public GSRendererDX
-{
-public:
-	GSRendererDX11();
-	virtual ~GSRendererDX11() {}
-
-	bool CreateDevice(GSDevice* dev);
-};

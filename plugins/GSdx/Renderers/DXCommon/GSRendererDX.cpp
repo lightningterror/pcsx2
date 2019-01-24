@@ -22,9 +22,8 @@
 #include "stdafx.h"
 #include "GSRendererDX.h"
 
-GSRendererDX::GSRendererDX(GSTextureCache* tc, const GSVector2& pixelcenter)
-	: GSRendererHW(tc)
-	, m_pixelcenter(pixelcenter)
+GSRendererDX::GSRendererDX()
+	: GSRendererHW(new GSTextureCache11(this))
 {
 	if (theApp.GetConfigB("UserHacks"))
 	{
@@ -40,8 +39,9 @@ GSRendererDX::GSRendererDX(GSTextureCache* tc, const GSVector2& pixelcenter)
 	ResetStates();
 }
 
-GSRendererDX::~GSRendererDX()
+bool GSRendererDX::CreateDevice(GSDevice* dev)
 {
+	return GSRenderer::CreateDevice(dev);
 }
 
 void GSRendererDX::SetupIA(const float& sx, const float& sy)
@@ -860,8 +860,8 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 	float sy = 2.0f * rtscale.y / (rtsize.y << 4);
 	float ox = (float)(int)m_context->XYOFFSET.OFX;
 	float oy = (float)(int)m_context->XYOFFSET.OFY;
-	float ox2 = 2.0f * m_pixelcenter.x / rtsize.x;
-	float oy2 = 2.0f * m_pixelcenter.y / rtsize.y;
+	float ox2 = -1.0f / rtsize.x;
+	float oy2 = -1.0f / rtsize.y;
 
 	//This hack subtracts around half a pixel from OFX and OFY. (Cannot do this directly,
 	//because DX10 and DX9 have a different pixel center.)
@@ -871,12 +871,6 @@ void GSRendererDX::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sourc
 
 	if (rt && rt->LikelyOffset && m_userHacks_HPO == 1)
 	{
-		// DX9 has pixelcenter set to 0.0, so give it some value here
-
-		if (m_pixelcenter.x == 0 && m_pixelcenter.y == 0)
-		{
-			ox2 = -0.0003f; oy2 = -0.0003f;
-		}
 		
 		ox2 *= rt->OffsetHack_modx;
 		oy2 *= rt->OffsetHack_mody;
