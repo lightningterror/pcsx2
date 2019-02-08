@@ -357,13 +357,57 @@ PS_OUTPUT ps_main17(PS_INPUT input)
 	return output;
 }
 
-// DUMMY
 PS_OUTPUT ps_main18(PS_INPUT input)
 {
 	PS_OUTPUT output;
 
-	output.c = input.p;
+	float4 i = sample_c(input.t);
+	float4 o;
 
+	float3x3 rgb2yuv; // Value from GS manual
+	rgb2yuv[0] = float3(0.587, -0.311, -0.419);
+	rgb2yuv[1] = float3(0.114, 0.500, -0.081);
+	rgb2yuv[2] = float3(0.299, -0.169, 0.500);
+
+	float3 yuv = rgb2yuv * i.gbr;
+
+	float Y = ((float)0xDB) / 255.0f * yuv.x + ((float)0x10) / 255.0f;
+	float Cr = ((float)0xE0) / 255.0f * yuv.y + ((float)0x80) / 255.0f;
+	float Cb = ((float)0xE0) / 255.0f * yuv.z + ((float)0x80) / 255.0f;
+
+	switch (EMODA)
+	{
+	case 0:
+		o.a = i.a;
+		break;
+	case 1:
+		o.a = Y;
+		break;
+	case 2:
+		o.a = Y / 2.0f;
+		break;
+	case 3:
+		o.a = 0.0f;
+		break;
+	}
+
+	switch (EMODC)
+	{
+	case 0:
+		o.rgb = i.rgb;
+		break;
+	case 1:
+		o.rgb = (float3)Y;
+		break;
+	case 2:
+		o.rgb = float3(Y, Cb, Cr);
+		break;
+	case 3:
+		o.rgb = (float3)i.a;
+		break;
+	}
+
+	output.c = o;
 	return output;
 }
 
