@@ -40,3 +40,6 @@ test: off
 artifacts:
   - path: $(folder_name).7z
     name: $(visualstudio_string)-$(target)
+
+# Do not build feature branch with open Pull Requests
+skip_branch_with_pr: true
