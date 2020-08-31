@@ -3,6 +3,8 @@
 # finished, which could be a bit annoying.
 version: 1.{build}-{branch}
 
+skip_branch_with_pr: true
+
 environment:
   matrix:
   - platform: Win32
