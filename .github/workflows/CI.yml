@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    paths-ignore:
+      - .gitignore
+      - README.md
+      - ISSUE_TEMPLATE.md
+  pull_request:
+    paths-ignore:
+      - .gitignore
+      - README.md
+      - ISSUE_TEMPLATE.md
+
+jobs:
+  Windows:
+    build:
+      runs-on: windows-latest
+
+      steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      # Note: Deletes contents in $GITHUB_WORKSPACE, so let's put it first
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+          architecture: x86
+
+      - name: Setup msbuild
+        uses: microsoft/setup-msbuild@v1.0.0
+
+      - name: Build pcsx2
+        continue-on-error: true
+        run: msbuild "buildbot.xml" /m /v:m /fl1 /fl2 /t:AppVeyor
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v1
+        with:
+          name: Win32-Release-VS2019
+          path: bin
+
+  Windows:
+    build:
+      runs-on: windows-latest
+
+      steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      # Note: Deletes contents in $GITHUB_WORKSPACE, so let's put it first
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+          architecture: x64
+
+      - name: Setup msbuild
+        uses: microsoft/setup-msbuild@v1.0.0
+
+      - name: Build pcsx2
+        continue-on-error: true
+        run: msbuild "buildbot.xml" /m /v:m /fl1 /fl2 /t:AppVeyor
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v1
+        with:
+          name: Win32-Release-VS2019
+          path: bin
