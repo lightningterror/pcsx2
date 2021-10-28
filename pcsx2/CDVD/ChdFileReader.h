@@ -15,7 +15,14 @@
 
 #pragma once
 #include "ThreadedFileReader.h"
+
+#pragma GCC diagnostic push
+#pragma clang diagnostic push
+#pragma GCC diagnostic ignored "-Wall"
+#pragma clang diagnostic ignored "-Wall"
 #include "libchdr/chd.h"
+#pragma GCC diagnostic pop
+#pragma clang diagnostic pop
 
 class ChdFileReader : public ThreadedFileReader
 {
