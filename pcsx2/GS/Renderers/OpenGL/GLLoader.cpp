@@ -83,6 +83,12 @@ namespace Emulate_DSA
 		glTexSubImage2D(GL_TEXTURE_2D, level, xoffset, yoffset, width, height, format, type, pixels);
 	}
 
+	void APIENTRY CopyTextureSubImage(GLuint texture, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height)
+	{
+		BindTextureUnit(7, texture);
+		glCopyTexSubImage2D(GL_TEXTURE_2D, level, xoffset, yoffset, x, y, width, height);
+	}
+
 	void APIENTRY CompressedTextureSubImage(GLuint texture, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLsizei imageSize, const void* data)
 	{
 		BindTextureUnit(7, texture);
@@ -126,6 +132,7 @@ namespace Emulate_DSA
 		glBindTextureUnit = BindTextureUnit;
 		glCreateTextures = CreateTexture;
 		glTextureStorage2D = TextureStorage;
+		glCopyTextureSubImage2D = CopyTextureSubImage;
 		glTextureSubImage2D = TextureSubImage;
 		glCompressedTextureSubImage2D = CompressedTextureSubImage;
 		glGetTextureImage = GetTexureImage;
@@ -151,6 +158,10 @@ namespace GLLoader
 	// DX11 GPU
 	bool found_GL_ARB_gpu_shader5 = false;             // Require IvyBridge
 	bool found_GL_ARB_texture_barrier = false;
+	
+	// Ivy Bridge
+	bool found_GL_ARB_copy_image = false;
+	bool found_GL_ARB_clip_control = false;
 
 	static bool mandatory(const std::string& ext)
 	{
@@ -254,8 +265,8 @@ namespace GLLoader
 		// Only for HW renderer
 		if (GSConfig.UseHardwareRenderer())
 		{
-			ok = ok && mandatory("GL_ARB_copy_image");
-			ok = ok && mandatory("GL_ARB_clip_control");
+			found_GL_ARB_copy_image = optional("GL_ARB_copy_image");
+			found_GL_ARB_clip_control = optional("GL_ARB_clip_control");
 		}
 		if (!ok)
 			return false;

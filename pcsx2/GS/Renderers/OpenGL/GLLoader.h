@@ -44,4 +44,8 @@ namespace GLLoader
 	extern bool found_geometry_shader;
 	extern bool found_GL_ARB_gpu_shader5;
 	extern bool found_GL_ARB_texture_barrier;
+
+	// Ivy Bridge
+	extern bool found_GL_ARB_copy_image;
+	extern bool found_GL_ARB_clip_control;
 } // namespace GLLoader
