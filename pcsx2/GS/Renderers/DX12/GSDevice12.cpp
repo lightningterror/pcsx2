@@ -9,6 +9,8 @@
 #include "GS/Renderers/DX12/GSDevice12.h"
 #include "GS/Renderers/DX12/D3D12Builders.h"
 #include "GS/Renderers/DX12/D3D12ShaderCache.h"
+#include "GS/GSState.h"
+
 #include "Host.h"
 #include "ShaderCacheVersion.h"
 
@@ -177,7 +179,16 @@ bool GSDevice12::CreateDevice()
 	}
 
 	// Create the actual device.
-	hr = D3D12CreateDevice(m_adapter.get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device));
+	static constexpr const D3D_FEATURE_LEVEL feature_levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
+	for (const D3D_FEATURE_LEVEL fl : feature_levels)
+	{
+		hr = D3D12CreateDevice(m_adapter.get(), fl, IID_PPV_ARGS(&m_device));
+		if (SUCCEEDED(hr))
+		{
+			m_feature_level = fl;
+			break;
+		}
+	}
 	if (FAILED(hr))
 	{
 		Console.Error("Failed to create D3D12 device: %08X", hr);
@@ -1201,6 +1212,7 @@ bool GSDevice12::CheckFeatures()
 	m_features.cas_sharpening = true;
 	m_features.test_and_sample_depth = false;
 	m_features.vs_expand = !GSConfig.DisableVertexShaderExpand;
+	m_features.raster_order_view = false;
 
 	m_features.dxt_textures = SupportsTextureFormat(DXGI_FORMAT_BC1_UNORM) &&
 							  SupportsTextureFormat(DXGI_FORMAT_BC2_UNORM) &&
@@ -1211,6 +1223,17 @@ bool GSDevice12::CheckFeatures()
 	HRESULT hr = m_dxgi_factory->CheckFeatureSupport(
 		DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allow_tearing_supported, sizeof(allow_tearing_supported));
 	m_allow_tearing_supported = (SUCCEEDED(hr) && allow_tearing_supported == TRUE);
+
+
+	D3D12_FEATURE_DATA_D3D12_OPTIONS opts = {};
+	if (m_feature_level >= D3D_FEATURE_LEVEL_11_1 &&
+		SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &opts, sizeof(opts))) &&
+		opts.ROVsSupported && GSConfig.OverrideRasterizerOrderViews != 0)
+	{
+		DevCon.WriteLn("(GSDevice12) Enabling ROV");
+		m_features.texture_barrier = true;
+		m_features.raster_order_view = true;
+	}
 
 	return true;
 }
@@ -1246,6 +1269,7 @@ void GSDevice12::LookupNativeFormat(GSTexture::Format format, DXGI_FORMAT* d3d_f
 				DXGI_FORMAT_UNKNOWN}, // HDRColor
 			{DXGI_FORMAT_D32_FLOAT_S8X24_UINT, DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS, DXGI_FORMAT_UNKNOWN,
 				DXGI_FORMAT_D32_FLOAT_S8X24_UINT}, // DepthStencil
+			{DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_UNKNOWN}, // ColorDepth
 			{DXGI_FORMAT_A8_UNORM, DXGI_FORMAT_A8_UNORM, DXGI_FORMAT_A8_UNORM, DXGI_FORMAT_UNKNOWN}, // UNorm8
 			{DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R16_UINT, DXGI_FORMAT_UNKNOWN}, // UInt16
 			{DXGI_FORMAT_R32_UINT, DXGI_FORMAT_R32_UINT, DXGI_FORMAT_R32_UINT, DXGI_FORMAT_UNKNOWN}, // UInt32
@@ -1275,7 +1299,14 @@ GSTexture* GSDevice12::CreateSurface(GSTexture::Type type, int width, int height
 	DXGI_FORMAT dxgi_format, srv_format, rtv_format, dsv_format;
 	LookupNativeFormat(format, &dxgi_format, &srv_format, &rtv_format, &dsv_format);
 
-	const DXGI_FORMAT uav_format = (type == GSTexture::Type::RWTexture) ? dxgi_format : DXGI_FORMAT_UNKNOWN;
+	const DXGI_FORMAT uav_format =
+		(type == GSTexture::Type::RWTexture) ?
+			dxgi_format :
+			(m_features.raster_order_view &&
+						(type == GSTexture::Type::RenderTarget &&
+							(format == GSTexture::Format::Color || format == GSTexture::Format::ColorDepth)) ?
+					srv_format :
+					DXGI_FORMAT_UNKNOWN);
 
 	std::unique_ptr<GSTexture12> tex(GSTexture12::Create(type, format, clamped_width, clamped_height, levels,
 		dxgi_format, srv_format, rtv_format, dsv_format, uav_format));
@@ -1389,8 +1420,13 @@ void GSDevice12::StretchRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 		int(sRect.right - sRect.left), int(sRect.bottom - sRect.top), int(dRect.left), int(dRect.top),
 		int(dRect.right - dRect.left), int(dRect.bottom - dRect.top));
 
-	DoStretchRect(static_cast<GSTexture12*>(sTex), sRect, static_cast<GSTexture12*>(dTex), dRect,
-		dTex ? m_convert[static_cast<int>(shader)].get() : m_present[static_cast<int>(shader)].get(), linear,
+	// Hack for ROV
+	ID3D12PipelineState* pipeline =
+		(dTex ? ((dTex->GetFormat() == GSTexture::Format::ColorDepth) ?
+			m_rov_depth_begin_pipeline.get() : m_convert[static_cast<int>(shader)].get()) :
+			m_present[static_cast<int>(shader)].get());
+	DoStretchRect(
+		static_cast<GSTexture12*>(sTex), sRect, static_cast<GSTexture12*>(dTex), dRect, pipeline, linear,
 		ShaderConvertWriteMask(shader) == 0xf);
 }
 
@@ -1571,8 +1607,11 @@ void GSDevice12::DoMultiStretchRects(
 	SetUtilityTexture(rects[0].src, rects[0].linear ? m_linear_sampler_cpu : m_point_sampler_cpu);
 
 	pxAssert(shader == ShaderConvert::COPY || rects[0].wmask.wrgba == 0xf);
-	SetPipeline((rects[0].wmask.wrgba != 0xf) ? m_color_copy[rects[0].wmask.wrgba].get() :
-												m_convert[static_cast<int>(shader)].get());
+
+	SetPipeline((dTex->GetFormat() == GSTexture::Format::ColorDepth) ?
+					m_rov_depth_begin_pipeline.get() :
+					((rects[0].wmask.wrgba != 0xf) ? m_color_copy[rects[0].wmask.wrgba].get() :
+													 m_convert[static_cast<int>(shader)].get()));
 
 	if (ApplyUtilityState())
 		DrawIndexedPrimitive();
@@ -2117,12 +2156,12 @@ void GSDevice12::OMSetRenderTargets(GSTexture* rt, GSTexture* ds, const GSVector
 {
 	GSTexture12* vkRt = static_cast<GSTexture12*>(rt);
 	GSTexture12* vkDs = static_cast<GSTexture12*>(ds);
-	pxAssert(vkRt || vkDs);
 
 	if (m_current_render_target != vkRt || m_current_depth_target != vkDs)
 	{
 		// framebuffer change
 		EndRenderPass();
+		m_dirty_flags |= DIRTY_FLAG_RENDER_TARGET;
 	}
 	else if (InRenderPass())
 	{
@@ -2155,11 +2194,14 @@ void GSDevice12::OMSetRenderTargets(GSTexture* rt, GSTexture* ds, const GSVector
 			vkDs->TransitionToState(D3D12_RESOURCE_STATE_DEPTH_WRITE);
 	}
 
-	// This is used to set/initialize the framebuffer for tfx rendering.
-	const GSVector2i size = vkRt ? vkRt->GetSize() : vkDs->GetSize();
-	const D3D12_VIEWPORT vp{0.0f, 0.0f, static_cast<float>(size.x), static_cast<float>(size.y), 0.0f, 1.0f};
+	if (vkRt || vkDs)
+	{
+		// This is used to set/initialize the framebuffer for tfx rendering.
+		const GSVector2i size = vkRt ? vkRt->GetSize() : vkDs->GetSize();
+		const D3D12_VIEWPORT vp{ 0.0f, 0.0f, static_cast<float>(size.x), static_cast<float>(size.y), 0.0f, 1.0f };
+		SetViewport(vp);
+	}
 
-	SetViewport(vp);
 	SetScissor(scissor);
 }
 
@@ -2277,7 +2319,7 @@ bool GSDevice12::CreateNullTexture()
 {
 	m_null_texture =
 		GSTexture12::Create(GSTexture::Type::Texture, GSTexture::Format::Color, 1, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM,
-			DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_UNKNOWN, DXGI_FORMAT_UNKNOWN, DXGI_FORMAT_UNKNOWN);
+			DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_UNKNOWN, DXGI_FORMAT_UNKNOWN, DXGI_FORMAT_R8G8B8A8_UNORM);
 	if (!m_null_texture)
 		return false;
 
@@ -2353,6 +2395,10 @@ bool GSDevice12::CreateRootSignatures()
 	rsb.AddDescriptorTable(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 2, D3D12_SHADER_VISIBILITY_PIXEL);
 	rsb.AddDescriptorTable(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 0, NUM_TFX_SAMPLERS, D3D12_SHADER_VISIBILITY_PIXEL);
 	rsb.AddDescriptorTable(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 2, D3D12_SHADER_VISIBILITY_PIXEL);
+
+	if (m_features.raster_order_view)
+		rsb.AddDescriptorTable(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 2, D3D12_SHADER_VISIBILITY_PIXEL);
+
 	if (!(m_tfx_root_signature = rsb.Create()))
 		return false;
 	D3D12::SetObjectName(m_tfx_root_signature.get(), "TFX root signature");
@@ -2459,6 +2505,15 @@ bool GSDevice12::CompileConvertPipelines()
 				D3D12::SetObjectName(m_color_copy[i].get(), TinyString::from_fmt("Color copy pipeline (r={}, g={}, b={}, a={})",
 					i & 1u, (i >> 1) & 1u, (i >> 2) & 1u, (i >> 3) & 1u));
 			}
+
+			// ROV depth begin
+			gpb.SetRenderTarget(0, DXGI_FORMAT_R32_FLOAT);
+			gpb.SetDepthStencilFormat(DXGI_FORMAT_UNKNOWN);
+			gpb.SetNoBlendingState();
+			m_rov_depth_begin_pipeline = gpb.Create(m_device.get(), m_shader_cache, false);
+			if (!m_rov_depth_begin_pipeline)
+				return false;
+			D3D12::SetObjectName(m_rov_depth_begin_pipeline.get(), "Convert depth to ROV");
 		}
 		else if (i == ShaderConvert::HDR_INIT || i == ShaderConvert::HDR_RESOLVE)
 		{
@@ -2703,6 +2758,7 @@ void GSDevice12::DestroyResources()
 	m_hdr_setup_pipelines = {};
 	m_hdr_finish_pipelines = {};
 	m_date_image_setup_pipelines = {};
+	m_rov_depth_begin_pipeline.reset();
 	m_fxaa_pipeline.reset();
 	m_shadeboost_pipeline.reset();
 	m_imgui_pipeline.reset();
@@ -2834,6 +2890,10 @@ const ID3DBlob* GSDevice12::GetTFXPixelShader(const GSHWDrawConfig::PSSelector& 
 	sm.AddMacro("PS_NO_COLOR1", sel.no_color1);
 	sm.AddMacro("PS_NO_ABLEND", sel.no_ablend);
 	sm.AddMacro("PS_ONLY_ALPHA", sel.only_alpha);
+	sm.AddMacro("PS_ROV", sel.rov);
+	sm.AddMacro("PS_ZTST", sel.ztst);
+	sm.AddMacro("PS_ZWE", sel.zwe);
+	sm.AddMacro("PS_AFAIL", sel.afail);
 
 	ComPtr<ID3DBlob> ps(m_shader_cache.GetPixelShader(m_tfx_source, sm.GetPtr(), "ps_main"));
 	it = m_tfx_pixel_shaders.emplace(sel, std::move(ps)).first;
@@ -2980,7 +3040,11 @@ void GSDevice12::InitializeState()
 {
 	for (u32 i = 0; i < NUM_TOTAL_TFX_TEXTURES; i++)
 		m_tfx_textures[i] = m_null_texture->GetSRVDescriptor();
+	
 	m_tfx_sampler_sel = GSHWDrawConfig::SamplerSelector::Point().key;
+
+	for (u32 i = 0; i < NUM_TFX_UAVS; i++)
+		m_tfx_uavs[i] = m_null_texture->GetUAVDescriptor();
 
 	InvalidateCachedState();
 }
@@ -3160,6 +3224,35 @@ void GSDevice12::PSSetSampler(GSHWDrawConfig::SamplerSelector sel)
 	m_dirty_flags |= DIRTY_FLAG_TFX_SAMPLERS;
 }
 
+void GSDevice12::PSSetUAV(u32 index, GSTexture* uav)
+{
+	D3D12DescriptorHandle handle;
+	if (uav)
+	{
+		GSTexture12* dtex = static_cast<GSTexture12*>(uav);
+		if (dtex->GetResourceState() != D3D12_RESOURCE_STATE_UNORDERED_ACCESS && InRenderPass())
+		{
+			GL_INS("Ending render pass due to resource transition");
+			EndRenderPass();
+		}
+
+		dtex->CommitClear();
+		dtex->TransitionToState(D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+		dtex->SetUseFenceCounter(GetCurrentFenceValue());
+		handle = dtex->GetUAVDescriptor();
+	}
+	else
+	{
+		handle = m_null_texture->GetUAVDescriptor();
+	}
+
+	if (m_tfx_uavs[index] == handle)
+		return;
+
+	m_tfx_uavs[index] = handle;
+	m_dirty_flags |= DIRTY_FLAG_TFX_UAVS;
+}
+
 void GSDevice12::SetUtilityRootSignature()
 {
 	if (m_current_root_signature == RootSignature::Utility)
@@ -3227,6 +3320,14 @@ void GSDevice12::UnbindTexture(GSTexture12* tex)
 		{
 			m_tfx_textures[i] = m_null_texture->GetSRVDescriptor();
 			m_dirty_flags |= DIRTY_FLAG_TFX_TEXTURES;
+		}
+	}
+	for (u32 i = 0; i < NUM_TFX_UAVS; i++)
+	{
+		if (m_tfx_uavs[i] && m_tfx_uavs[i] == tex->GetUAVDescriptor())
+		{
+			m_tfx_uavs[i] = m_null_texture->GetUAVDescriptor();
+			m_dirty_flags |= DIRTY_FLAG_TFX_UAVS;
 		}
 	}
 	if (m_current_render_target == tex)
@@ -3334,11 +3435,8 @@ void GSDevice12::BeginRenderPass(D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE color_b
 	if (m_in_render_pass)
 		EndRenderPass();
 
-	// we're setting the RT here.
-	m_dirty_flags &= ~DIRTY_FLAG_RENDER_TARGET;
-	m_in_render_pass = true;
-
 	D3D12_RENDER_PASS_RENDER_TARGET_DESC rt = {};
+
 	if (m_current_render_target)
 	{
 		rt.cpuDescriptor = m_current_render_target->GetWriteDescriptor();
@@ -3375,8 +3473,47 @@ void GSDevice12::BeginRenderPass(D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE color_b
 		}
 	}
 
-	GetCommandList()->BeginRenderPass(m_current_render_target ? 1 : 0,
-		m_current_render_target ? &rt : nullptr, m_current_depth_target ? &ds : nullptr, D3D12_RENDER_PASS_FLAG_NONE);
+	if (m_features.raster_order_view)
+	{
+		// Don't use render passes when using ROV.
+		// But we need to commit any clears/discards.
+		if (color_begin == D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_DISCARD)
+		{
+			GetCommandList()->DiscardResource(m_current_render_target->GetResource(), nullptr);
+			m_current_render_target->SetState(GSTexture::State::Dirty);
+		}
+		else if (color_begin == D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR)
+		{
+			GetCommandList()->ClearRenderTargetView(m_current_render_target->GetWriteDescriptor(),
+				rt.BeginningAccess.Clear.ClearValue.Color, 0, nullptr);
+			m_current_render_target->SetState(GSTexture::State::Dirty);
+		}
+		if (depth_begin == D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_DISCARD)
+		{
+			GetCommandList()->DiscardResource(m_current_depth_target->GetResource(), nullptr);
+			m_current_depth_target->SetState(GSTexture::State::Dirty);
+		}
+		else if (depth_begin == D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR || stencil_begin == D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR)
+		{
+			const u32 flags =
+				((depth_begin == D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR) ? D3D12_CLEAR_FLAG_DEPTH : 0) |
+				((stencil_begin == D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR) ? D3D12_CLEAR_FLAG_STENCIL : 0);
+			GetCommandList()->ClearDepthStencilView(m_current_depth_target->GetWriteDescriptor(),
+				static_cast<D3D12_CLEAR_FLAGS>(flags), ds.DepthBeginningAccess.Clear.ClearValue.DepthStencil.Depth, ds.DepthBeginningAccess.Clear.ClearValue.DepthStencil.Stencil,
+				0, nullptr);
+			m_current_depth_target->SetState(GSTexture::State::Dirty);
+		}
+	}
+	else
+	{
+		// we're setting the RT here.
+		m_dirty_flags &= ~DIRTY_FLAG_RENDER_TARGET;
+		m_in_render_pass = true;
+
+		GetCommandList()->BeginRenderPass(
+			m_current_render_target ? 1 : 0, m_current_render_target ? &rt : nullptr,
+			m_current_depth_target ? &ds : nullptr, D3D12_RENDER_PASS_FLAG_NONE);
+	}
 }
 
 void GSDevice12::EndRenderPass()
@@ -3551,6 +3688,17 @@ bool GSDevice12::ApplyTFXState(bool already_execed)
 		flags |= DIRTY_FLAG_TEXTURES_DESCRIPTOR_TABLE_2;
 	}
 
+	if (m_features.raster_order_view && flags & DIRTY_FLAG_TFX_UAVS)
+	{
+		if (!GetTextureGroupDescriptors(&m_tfx_uav_handle_gpu, m_tfx_uavs.data(), NUM_TFX_UAVS))
+		{
+			ExecuteCommandListAndRestartRenderPass(false, "Ran out of TFX UAV descriptor descriptor groups");
+			return ApplyTFXState(true);
+		}
+
+		flags |= DIRTY_FLAG_UAV_DESCRIPTOR_TABLE;
+	}
+
 	ID3D12GraphicsCommandList* cmdlist = GetCommandList();
 
 	if (m_current_root_signature != RootSignature::TFX)
@@ -3558,7 +3706,7 @@ bool GSDevice12::ApplyTFXState(bool already_execed)
 		m_current_root_signature = RootSignature::TFX;
 		flags |= DIRTY_FLAG_VS_CONSTANT_BUFFER_BINDING | DIRTY_FLAG_PS_CONSTANT_BUFFER_BINDING |
 				 DIRTY_FLAG_TEXTURES_DESCRIPTOR_TABLE | DIRTY_FLAG_SAMPLERS_DESCRIPTOR_TABLE |
-				 DIRTY_FLAG_TEXTURES_DESCRIPTOR_TABLE_2 | DIRTY_FLAG_PIPELINE;
+				 DIRTY_FLAG_TEXTURES_DESCRIPTOR_TABLE_2 | DIRTY_FLAG_UAV_DESCRIPTOR_TABLE | DIRTY_FLAG_PIPELINE;
 		cmdlist->SetGraphicsRootSignature(m_tfx_root_signature.get());
 	}
 
@@ -3577,6 +3725,8 @@ bool GSDevice12::ApplyTFXState(bool already_execed)
 		cmdlist->SetGraphicsRootDescriptorTable(TFX_ROOT_SIGNATURE_PARAM_PS_SAMPLERS, m_tfx_samplers_handle_gpu);
 	if (flags & DIRTY_FLAG_TEXTURES_DESCRIPTOR_TABLE_2)
 		cmdlist->SetGraphicsRootDescriptorTable(TFX_ROOT_SIGNATURE_PARAM_PS_RT_TEXTURES, m_tfx_rt_textures_handle_gpu);
+	if (m_features.raster_order_view && flags & DIRTY_FLAG_UAV_DESCRIPTOR_TABLE)
+		cmdlist->SetGraphicsRootDescriptorTable(TFX_ROOT_SIGNATURE_PARAM_PS_UAVS, m_tfx_uav_handle_gpu);
 
 	ApplyBaseState(flags, cmdlist);
 	return true;
@@ -3734,12 +3884,12 @@ void GSDevice12::RenderHW(GSHWDrawConfig& config)
 	if (stencil_DATE)
 		SetupDATE(config.rt, config.ds, config.datm, config.drawarea);
 
+	// figure out the pipeline
+	UpdateHWPipelineSelector(config);
+
 	// stream buffer in first, in case we need to exec
 	SetVSConstantBuffer(config.cb_vs);
 	SetPSConstantBuffer(config.cb_ps);
-
-	// figure out the pipeline
-	UpdateHWPipelineSelector(config);
 
 	// bind textures before checking the render pass, in case we need to transition them
 	PipelineSelector& pipe = m_pipeline_selector;
@@ -3837,29 +3987,68 @@ void GSDevice12::RenderHW(GSHWDrawConfig& config)
 		PSSetShaderResource(0, nullptr, false);
 	}
 
-	// avoid restarting the render pass just to switch from rt+depth to rt and vice versa
-	if (m_in_render_pass && (m_current_render_target == draw_rt || m_current_depth_target == draw_ds))
+	if (config.ps.rov)
 	{
-		// avoid restarting the render pass just to switch from rt+depth to rt and vice versa
-		// keep the depth even if doing HDR draws, because the next draw will probably re-enable depth
-		if (!draw_rt && m_current_render_target && config.tex != m_current_render_target &&
-			m_current_render_target->GetSize() == draw_ds->GetSize())
+		EndRenderPass();
+
+		draw_rt->CommitClear();
+		PSSetUAV(0, draw_rt);
+		draw_rt = nullptr;
+
+		if (draw_ds)
 		{
-			draw_rt = m_current_render_target;
-			m_pipeline_selector.rt = true;
+			draw_ds->CommitClear();
+			if (config.rov_depth)
+			{
+				PSSetUAV(1, config.ds);
+				draw_ds = nullptr;
+			}
+		}
+		
+		OMSetRenderTargets(nullptr, draw_ds, config.scissor);
+		if (!draw_ds)
+		{
+			// Still need to set viewport.
+			const D3D12_VIEWPORT vp{ 0.0f, 0.0f, static_cast<float>(config.rt->GetWidth()), static_cast<float>(config.rt->GetHeight()), 0.0f, 1.0f };
+			SetViewport(vp);
+			SetScissor(config.scissor);
 		}
 	}
-	else if (!draw_ds && m_current_depth_target && config.tex != m_current_depth_target &&
-			 m_current_depth_target->GetSize() == draw_rt->GetSize())
+	else
 	{
-		draw_ds = m_current_depth_target;
-		m_pipeline_selector.ds = true;
+		// avoid restarting the render pass just to switch from rt+depth to rt and vice versa
+		if (m_in_render_pass && (m_current_render_target == draw_rt || m_current_depth_target == draw_ds))
+		{
+			// avoid restarting the render pass just to switch from rt+depth to rt and vice versa
+			// keep the depth even if doing HDR draws, because the next draw will probably re-enable depth
+			if (!draw_rt && m_current_render_target && config.tex != m_current_render_target &&
+				m_current_render_target->GetSize() == draw_ds->GetSize())
+			{
+				draw_rt = m_current_render_target;
+				m_pipeline_selector.rt = true;
+			}
+		}
+		else if (!draw_ds && m_current_depth_target && config.tex != m_current_depth_target &&
+				 m_current_depth_target->GetSize() == draw_rt->GetSize())
+		{
+			draw_ds = m_current_depth_target;
+			m_pipeline_selector.ds = true;
+		}
+		// avoid restarting the render pass just to switch from rt+depth to rt and vice versa
+		if (m_in_render_pass && !hdr_rt && !draw_ds && m_current_depth_target && m_current_render_target == draw_rt &&
+			config.tex != m_current_depth_target && m_current_depth_target->GetSize() == draw_rt->GetSize())
+		{
+			draw_ds = m_current_depth_target;
+			m_pipeline_selector.ds = true;
+			m_pipeline_selector.dss.ztst = ZTST_ALWAYS;
+			m_pipeline_selector.dss.zwe = false;
+		}
+
+		OMSetRenderTargets(draw_rt, draw_ds, config.scissor);
 	}
 
-	OMSetRenderTargets(draw_rt, draw_ds, config.scissor);
-
 	// Begin render pass if new target or out of the area.
-	if (!m_in_render_pass)
+	if (!config.ps.rov && !m_in_render_pass)
 	{
 		BeginRenderPass(GetLoadOpForTexture(draw_rt),
 			draw_rt ? D3D12_RENDER_PASS_ENDING_ACCESS_TYPE_PRESERVE : D3D12_RENDER_PASS_ENDING_ACCESS_TYPE_NO_ACCESS,
@@ -3974,8 +4163,9 @@ void GSDevice12::UpdateHWPipelineSelector(GSHWDrawConfig& config)
 	m_pipeline_selector.bs.constant = 0; // don't dupe states with different alpha values
 	m_pipeline_selector.cms.key = config.colormask.key;
 	m_pipeline_selector.topology = static_cast<u32>(config.topology);
-	m_pipeline_selector.rt = config.rt != nullptr;
-	m_pipeline_selector.ds = config.ds != nullptr;
+	m_pipeline_selector.rt = config.rt != nullptr && !config.ps.rov;
+	m_pipeline_selector.ds = config.ds != nullptr && !config.rov_depth;
+	m_pipeline_selector.rov = m_features.raster_order_view;
 }
 
 void GSDevice12::UploadHWDrawVerticesAndIndices(const GSHWDrawConfig& config)

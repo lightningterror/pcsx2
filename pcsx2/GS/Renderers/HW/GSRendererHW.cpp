@@ -94,6 +94,10 @@ void GSRendererHW::UpdateSettings(const Pcsx2Config::GSOptions& old_config)
 
 void GSRendererHW::VSync(u32 field, bool registers_written, bool idle_frame)
 {
+	EndROVDepth(nullptr, nullptr);
+	m_rov_color_dst = nullptr;
+	m_rov_mismatch_count = 0;
+
 	if (GSConfig.LoadTextureReplacements)
 		GSTextureReplacements::ProcessAsyncLoadedTextures();
 
@@ -3959,11 +3963,23 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, bool& DAT
 		}
 	}
 
+	// If we're currently using ROV, and we don't want it now, keep using it but flag it as a mismatch.
+	// If we get too many mismatches, we'll eventually turn off ROV.
+	if (m_conf.ps.rov) //(m_rov_color_dst && m_rov_color_dst == m_conf.rt)
+	{
+		m_rov_mismatch_count++;
+		GL_INS("Persisting ROV despite it being unneeded, counter=%u", m_rov_mismatch_count);
+		sw_blending = true;
+		color_dest_blend = false;
+		accumulation_blend = false;
+		blend_mix = false;
+	}
+
 	// Color clip
 	if (COLCLAMP.CLAMP == 0)
 	{
 		bool free_colclip = false;
-		if (features.framebuffer_fetch)
+		if (features.framebuffer_fetch || features.raster_order_view)
 			free_colclip = true;
 		else if (features.texture_barrier)
 			free_colclip = m_prim_overlap == PRIM_OVERLAP_NO || blend_non_recursive;
@@ -4934,8 +4950,8 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 	bool DATE_BARRIER = false;
 	bool DATE_one = false;
 
-	const bool ate_first_pass = m_cached_ctx.TEST.DoFirstPass();
-	const bool ate_second_pass = m_cached_ctx.TEST.DoSecondPass();
+	bool ate_first_pass = m_cached_ctx.TEST.DoFirstPass();
+	bool ate_second_pass = m_cached_ctx.TEST.DoSecondPass();
 
 	ResetStates();
 
@@ -4945,6 +4961,27 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 	m_conf.ps.scanmsk = env.SCANMSK.MSK;
 	m_conf.rt = rt ? rt->m_texture : nullptr;
 	m_conf.ds = ds ? ds->m_texture : nullptr;
+
+	// End ROV early so we don't unnecessarily persist it in blending
+	const GSDevice::FeatureSupport features(g_gs_device->Features());
+	if (features.raster_order_view)
+	{
+		// get rid of existing ROV when we're changing targets
+		if (m_rov_color_dst && m_rov_color_dst != m_conf.rt)
+		{
+			// RT change, so end ROV
+			GL_INS("RT change, ending ROV");
+			m_rov_color_dst = nullptr;
+			m_rov_mismatch_count = 0;
+			EndROVDepth(m_conf.rt, m_conf.ds);
+		}
+		if (m_rov_depth_dst && m_conf.ds && (m_rov_depth_dst != m_conf.ds || m_rov_depth_dst == m_conf.tex))
+		{
+			GL_INS("DS change, ending ROV depth");
+			m_rov_mismatch_count = 0;
+			EndROVDepth(m_conf.rt, m_conf.ds);
+		}
+	}
 
 	// Z setup has to come before channel shuffle
 	EmulateZbuffer(ds);
@@ -4963,8 +5000,6 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 	m_prim_overlap = PrimitiveOverlap();
 
 	EmulateTextureShuffleAndFbmask(rt, tex);
-
-	const GSDevice::FeatureSupport features = g_gs_device->Features();
 
 	// Blend
 	int blend_alpha_min = 0, blend_alpha_max = 255;
@@ -5079,9 +5114,10 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 		{
 			// It is way too complex to emulate texture shuffle with DATE, so use accurate path.
 			// No overlap should be triggered on gl/vk only as they support DATE_BARRIER.
-			if (features.framebuffer_fetch)
+			if (features.framebuffer_fetch || features.raster_order_view)
 			{
 				// Full DATE is "free" with framebuffer fetch. The barrier gets cleared below.
+				// TODO: If there's no overlap, maybe it's better to not use ROV?
 				DATE_BARRIER = true;
 				m_conf.require_full_barrier = true;
 			}
@@ -5344,6 +5380,17 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 
 		ate_RGBA_then_Z = m_cached_ctx.TEST.GetAFAIL(m_cached_ctx.FRAME.PSM) == AFAIL_FB_ONLY && commutative_depth;
 		ate_RGB_then_ZA = m_cached_ctx.TEST.GetAFAIL(m_cached_ctx.FRAME.PSM) == AFAIL_RGB_ONLY && commutative_depth && commutative_alpha;
+		if (features.raster_order_view && (ate_RGBA_then_Z || ate_RGB_then_ZA || ((static_cast<u8>(ate_first_pass) + static_cast<u8>(ate_second_pass)) > 1)))
+		{
+			// TODO: ZB_ONLY doesn't need to trigger SW depth
+			ate_first_pass |= ate_second_pass;
+			ate_second_pass = false;
+
+			// TODO: This should be okay, but breaks ratchet. Fix.
+			//ate_RGBA_then_Z = false;
+			//ate_RGB_then_ZA = false;
+			m_conf.ps.afail = m_context->TEST.AFAIL;
+		}
 	}
 
 	if (ate_RGBA_then_Z)
@@ -5526,8 +5573,114 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 
 	m_conf.drawlist = (m_conf.require_full_barrier && m_vt.m_primclass == GS_SPRITE_CLASS) ? &m_drawlist : nullptr;
 
+	// ROV setup
+	if (features.raster_order_view)
+	{
+		// do we want ROV for this draw?
+		bool use_rov = m_conf.ps.IsFeedbackLoop();
+
+		// preserve ROV/sw depth if we're already using it
+		bool mismatch = false;
+		if (m_rov_color_dst && !use_rov)
+		{
+			GL_INS("ROV not needed, but enabled, so using it (counter=%u)", m_rov_mismatch_count);
+			use_rov = true;
+			mismatch = true;
+		}
+
+		bool use_rov_depth = use_rov && m_conf.ds && m_conf.ps.NeedsROVDepth();
+		if (m_rov_depth_dst && !use_rov_depth)
+		{
+			GL_INS("SW depth not needed, but enabled, so using it (counter=%u)", m_rov_mismatch_count);
+			use_rov_depth = (m_conf.ds != nullptr);
+			mismatch = true;
+		}
+
+		// update mismatch counter
+		m_rov_mismatch_count = mismatch ? (m_rov_mismatch_count + 1) : 0;
+
+		if (use_rov)
+		{
+			// enable rov color output
+			m_conf.ps.rov = true;
+			m_conf.ps.no_color = true;
+			m_conf.ps.no_color1 = true;
+			m_rov_color_dst = rt->m_texture;
+
+			// force fbmask on when we're not writing all channels
+			if (m_conf.colormask.wrgba != 0xF)
+			{
+				if (!m_conf.ps.fbmask)
+				{
+					m_conf.ps.fbmask = true;
+					m_conf.cb_ps.FbMask = GSVector4i::zero();
+				}
+				if (!m_conf.colormask.wr)
+					m_conf.cb_ps.FbMask.r = 0xFF;
+				if (!m_conf.colormask.wg)
+					m_conf.cb_ps.FbMask.g = 0xFF;
+				if (!m_conf.colormask.wb)
+					m_conf.cb_ps.FbMask.b = 0xFF;
+				if (!m_conf.colormask.wa)
+					m_conf.cb_ps.FbMask.a = 0xFF;
+			}
+
+			// reset blending to sw
+			EmulateBlending(blend_alpha_min, blend_alpha_max, DATE_PRIMID, DATE_BARRIER, blending_alpha_pass);
+
+			// kill all hw blending (it should be off anyway)
+			if (m_conf.blend.enable)
+				DevCon.Warning("HW blend enabled on ROV");
+			m_conf.blend = {};
+
+			// don't need barriers with rov, that's the whole point!
+			m_conf.require_full_barrier = false;
+			m_conf.require_one_barrier = false;
+		}
+
+		if (use_rov_depth)
+		{
+			// convert hw depth to sw depth
+			GL_INS("Using SW depth");
+			if (!BeginROVDepth(m_conf.ds, m_conf.drawarea)) [[unlikely]]
+				goto cleanup;
+
+			m_conf.ps.ztst = m_conf.depth.ztst;
+			m_conf.ps.zwe = m_conf.depth.zwe;
+			m_conf.depth.ztst = ZTST_ALWAYS;
+			m_conf.depth.zwe = false;
+			m_conf.ds = m_rov_depth_tex.get();
+			m_conf.rov_depth = true;
+
+			// kill two pass atest, we can do it in a single pass
+			// TODO: This is wrong
+			m_conf.alpha_second_pass.enable = false;
+			m_conf.ps.afail = m_context->TEST.AFAIL;
+		}
+
+		if (use_rov)
+		{
+			// we don't need the non-overlapping sprites with rov, hw does it.
+			m_conf.drawlist = nullptr;
+
+			g_gs_device->RenderHW(m_conf);
+
+			// if we mismatched too many times, end rov
+			if (m_rov_mismatch_count >= 10)
+			{
+				GL_INS("Disabling ROV due to too many mismatches");
+				m_rov_color_dst = nullptr;
+				EndROVDepth(m_conf.rt, ds ? ds->m_texture : nullptr);
+			}
+
+			goto cleanup;
+		}
+	}
+
+	// normal draw, no rov
 	g_gs_device->RenderHW(m_conf);
 
+cleanup:
 	if (tex_copy)
 		g_gs_device->Recycle(tex_copy);
 	if (temp_ds)
@@ -5722,6 +5875,152 @@ GSRendererHW::CLUTDrawTestResult GSRendererHW::PossibleCLUTDrawAggressive()
 
 	// Avoid invalidating anything here, we just want to avoid the thing being drawn on the GPU.
 	return CLUTDrawTestResult::CLUTDrawOnCPU;
+}
+
+bool GSRendererHW::CanContinueROVDepth(GSTexture* ds, const GSVector4i& area)
+{
+	if (!m_rov_depth_tex || m_rov_depth_dst != ds)
+		return false;
+
+	// new area is contained?
+	if (area.x >= m_rov_depth_rect.left && area.y >= m_rov_depth_rect.top &&
+		area.z <= m_rov_depth_rect.right && area.w <= m_rov_depth_rect.bottom)
+	{
+		// 2ez
+		return true;
+	}
+
+	// TODO: Align B
+	const GSVector4 ds_sz(GSVector4i(ds->GetSize()).xyxy());
+	GSDevice::MultiStretchRect new_rects[4];
+	u32 num_new_rects = 0;
+	const auto add_rect = [&](const GSVector4i& rc)
+	{
+		const GSVector4 frc(rc);
+		new_rects[num_new_rects++] = {
+			frc / ds_sz, frc, ds, false, 0xf
+		};
+	};
+
+	const GSVector4i& A = m_rov_depth_rect;
+	const GSVector4i& B = area;
+	if (B.top < A.top)
+	{
+		// rectangle above A
+		add_rect(GSVector4i(
+			std::min(A.left, B.left), B.top,
+			std::max(A.right, B.right), A.top
+		));
+	}
+	if (B.bottom > A.bottom)
+	{
+		// rectangle below A
+		add_rect(GSVector4i(
+			std::min(A.left, B.left), A.bottom,
+			std::max(A.right, B.right), B.bottom
+		));
+	}
+	if (B.left < A.left)
+	{
+		// rectangle to the left of A
+		add_rect(GSVector4i(
+			B.left, A.top, A.left, A.bottom
+		));
+	}
+	if (B.right > A.right)
+	{
+		// rectangle to the right of A
+		add_rect(GSVector4i(
+			A.right, A.top, B.right, A.bottom
+		));
+	}
+
+	// expand SW depth area
+	m_rov_depth_rect = GSVector4i(
+		std::min(A.left, B.left), std::min(A.top, B.top),
+		std::max(A.right, B.right), std::max(A.bottom, B.bottom)
+	);
+
+	pxAssertRel(num_new_rects > 0, "Has new rects");
+	g_gs_device->DrawMultiStretchRects(new_rects, num_new_rects, m_rov_depth_tex.get(), ShaderConvert::COPY);
+	return true;
+}
+
+bool GSRendererHW::BeginROVDepth(GSTexture* ds, const GSVector4i& area)
+{
+	// align the area to 128x128, hopefully reducing the number of times we need to do this
+	const int alignment = 128 * GSConfig.UpscaleMultiplier;
+	const GSVector4i aligned_area(area.ralign<Align_Outside>(GSVector2i(alignment, alignment)));
+
+	if (CanContinueROVDepth(ds, aligned_area))
+		return true;
+
+	EndROVDepth(nullptr, nullptr);
+
+	if (!m_rov_depth_tex || m_rov_depth_tex->GetSize() != ds->GetSize())
+	{
+		if (m_rov_depth_tex)
+			g_gs_device->Recycle(m_rov_depth_tex.release());
+
+		m_rov_depth_tex = std::unique_ptr<GSTexture>(
+			g_gs_device->CreateRenderTarget(ds->GetWidth(), ds->GetHeight(), GSTexture::Format::ColorDepth, false));
+		if (!m_rov_depth_tex) [[unlikely]]
+		{
+			GL_INS("ERROR: Failed to allocate memory for ROV depth, skipping.");
+			return false;
+		}
+	}
+
+	g_gs_device->InvalidateRenderTarget(m_rov_depth_tex.get());
+
+	const GSVector4 farea(aligned_area);
+	const GSVector4 sRect(farea / GSVector4(ds->GetWidth(), ds->GetHeight(), ds->GetWidth(), ds->GetHeight()));
+	g_gs_device->StretchRect(ds, sRect, m_rov_depth_tex.get(), farea, ShaderConvert::COPY, false);
+	m_rov_depth_dst = ds;
+	m_rov_depth_rect = aligned_area;
+	return true;
+}
+
+void GSRendererHW::EndROVDepth(GSTexture* new_rt, GSTexture* new_ds)
+{
+	if (!m_rov_depth_dst)
+		return;
+
+	// TODO: Leave RT bound to avoid a possible render pass restart after this.
+	const GSVector4 farea(m_rov_depth_rect);
+	g_gs_device->StretchRect(m_rov_depth_tex.get(),
+		farea / GSVector4(m_rov_depth_dst->GetWidth(), m_rov_depth_dst->GetHeight(), m_rov_depth_dst->GetWidth(),
+					m_rov_depth_dst->GetHeight()),
+		m_rov_depth_dst, farea, ShaderConvert::DEPTH_COPY, false, (new_ds == m_rov_depth_dst) ? new_rt : nullptr);
+	m_rov_depth_dst = nullptr;
+	m_rov_depth_rect = GSVector4i::zero();
+}
+
+void GSRendererHW::FlushROVDepthForTexture(GSTexture* ds, bool discard)
+{
+	if (m_rov_depth_dst != ds)
+		return;
+
+	if (!discard)
+	{
+		GL_INS("Flushing ROV depth: %d,%d => %d,%d", m_rov_depth_rect.left, m_rov_depth_rect.top,
+			m_rov_depth_rect.right, m_rov_depth_rect.bottom);
+
+		const GSVector4 farea(m_rov_depth_rect);
+		g_gs_device->StretchRect(m_rov_depth_tex.get(),
+			farea / GSVector4(m_rov_depth_dst->GetWidth(), m_rov_depth_dst->GetHeight(), m_rov_depth_dst->GetWidth(),
+						m_rov_depth_dst->GetHeight()),
+			m_rov_depth_dst, farea, ShaderConvert::DEPTH_COPY, false, nullptr);
+		m_rov_depth_dst = nullptr;
+		m_rov_depth_rect = GSVector4i::zero();
+	}
+	else
+	{
+		GL_INS("Discarding ROV depth.");
+	}
+
+	m_rov_depth_dst = nullptr;
+	m_rov_depth_rect = GSVector4i::zero();
 }
 
 bool GSRendererHW::CanUseSwPrimRender(bool no_rt, bool no_ds, bool draw_sprite_tex)
