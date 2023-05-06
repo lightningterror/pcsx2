@@ -2845,8 +2845,7 @@ void GSDeviceVK::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r,
 			// otherwise we need to do an attachment clear
 			const bool depth = (dTexVK->GetType() == GSTexture::Type::DepthStencil);
 			OMSetRenderTargets(depth ? nullptr : dTexVK, depth ? dTexVK : nullptr, dtex_rc);
-			BeginRenderPassForStretchRect(
-				dTexVK, dtex_rc, GSVector4i(destX, destY, destX + r.width(), destY + r.height()));
+			BeginRenderPassForStretchRect(GSVector4i(destX, destY, destX + r.width(), destY + r.height()), false);
 
 			// so use an attachment clear
 			VkClearAttachment ca;
@@ -2895,7 +2894,7 @@ void GSDeviceVK::CopyRect(GSTexture* sTex, GSTexture* dTex, const GSVector4i& r,
 }
 
 void GSDeviceVK::StretchRect(GSTexture* sTex, const GSVector4& sRect, GSTexture* dTex, const GSVector4& dRect,
-	ShaderConvert shader /* = ShaderConvert::COPY */, bool linear /* = true */)
+	ShaderConvert shader /* = ShaderConvert::COPY */, bool linear /* = true */, GSTexture* bindOtherTarget /*= nullptr*/)
 {
 	pxAssert(HasDepthOutput(shader) == (dTex && dTex->GetType() == GSTexture::Type::DepthStencil));
 	pxAssert(linear ? SupportsBilinear(shader) : SupportsNearest(shader));
@@ -2904,20 +2903,21 @@ void GSDeviceVK::StretchRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 		int(sRect.right - sRect.left), int(sRect.bottom - sRect.top), int(dRect.left), int(dRect.top),
 		int(dRect.right - dRect.left), int(dRect.bottom - dRect.top));
 
-	DoStretchRect(static_cast<GSTextureVK*>(sTex), sRect, static_cast<GSTextureVK*>(dTex), dRect,
-		dTex ? m_convert[static_cast<int>(shader)] : m_present[static_cast<int>(shader)], linear,
-		ShaderConvertWriteMask(shader) == 0xf);
+	DoStretchRect(static_cast<GSTextureVK*>(sTex), static_cast<GSTextureVK*>(bindOtherTarget), sRect,
+		static_cast<GSTextureVK*>(dTex), dRect, m_convert[bindOtherTarget != nullptr][static_cast<int>(shader)], linear,
+		ShaderConvertWriteMask(shader) == 0xf, false);
 }
 
 void GSDeviceVK::StretchRect(GSTexture* sTex, const GSVector4& sRect, GSTexture* dTex, const GSVector4& dRect, bool red,
-	bool green, bool blue, bool alpha)
+	bool green, bool blue, bool alpha, GSTexture* bindOtherTarget /*= nullptr*/)
 {
 	GL_PUSH("ColorCopy Red:%d Green:%d Blue:%d Alpha:%d", red, green, blue, alpha);
 
+	// TODO: other target
 	const u32 index = (red ? 1 : 0) | (green ? 2 : 0) | (blue ? 4 : 0) | (alpha ? 8 : 0);
 	const bool allow_discard = (index == 0xf);
-	DoStretchRect(static_cast<GSTextureVK*>(sTex), sRect, static_cast<GSTextureVK*>(dTex), dRect, m_color_copy[index],
-		false, allow_discard);
+	DoStretchRect(static_cast<GSTextureVK*>(sTex), nullptr, sRect, static_cast<GSTextureVK*>(dTex), dRect, m_color_copy[index],
+		false, allow_discard, false);
 }
 
 void GSDeviceVK::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture* dTex, const GSVector4& dRect,
@@ -2929,8 +2929,8 @@ void GSDeviceVK::PresentRect(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 	cb.SetTime(shaderTime);
 	SetUtilityPushConstants(&cb, sizeof(cb));
 
-	DoStretchRect(static_cast<GSTextureVK*>(sTex), sRect, static_cast<GSTextureVK*>(dTex), dRect,
-		m_present[static_cast<int>(shader)], linear, true);
+	DoStretchRect(static_cast<GSTextureVK*>(sTex), nullptr, sRect, static_cast<GSTextureVK*>(dTex), dRect,
+		m_present[static_cast<int>(shader)], linear, true, false);
 }
 
 void GSDeviceVK::DrawMultiStretchRects(
@@ -3036,62 +3036,73 @@ void GSDeviceVK::DoMultiStretchRects(
 	const GSVector4i rc(dTex->GetRect());
 	OMSetRenderTargets(dTex->IsRenderTarget() ? dTex : nullptr, dTex->IsDepthStencil() ? dTex : nullptr, rc);
 	if (!InRenderPass())
-		BeginRenderPassForStretchRect(dTex, rc, rc, false);
+		BeginRenderPassForStretchRect(rc, false);
 	SetUtilityTexture(rects[0].src, rects[0].linear ? m_linear_sampler : m_point_sampler);
 
 	pxAssert(shader == ShaderConvert::COPY || rects[0].wmask.wrgba == 0xf);
-	SetPipeline(
-		(rects[0].wmask.wrgba != 0xf) ? m_color_copy[rects[0].wmask.wrgba] : m_convert[static_cast<int>(shader)]);
+	SetPipeline((rects[0].wmask.wrgba != 0xf) ? m_color_copy[rects[0].wmask.wrgba] : m_convert[0][static_cast<int>(shader)]);
 
 	if (ApplyUtilityState())
 		DrawIndexedPrimitive();
 }
 
-void GSDeviceVK::BeginRenderPassForStretchRect(
-	GSTextureVK* dTex, const GSVector4i& dtex_rc, const GSVector4i& dst_rc, bool allow_discard)
+VkRenderPass GSDeviceVK::GetRenderPassForStretchRect(GSTexture::Format rt_format, VkAttachmentLoadOp rt_load_op,
+	GSTexture::Format ds_format, VkAttachmentLoadOp ds_load_op)
 {
-	pxAssert(dst_rc.x >= 0 && dst_rc.y >= 0 && dst_rc.z <= dTex->GetWidth() && dst_rc.w <= dTex->GetHeight());
-
-	const VkAttachmentLoadOp load_op =
-		(allow_discard && dst_rc.eq(dtex_rc)) ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : GetLoadOpForTexture(dTex);
-	dTex->SetState(GSTexture::State::Dirty);
-
-	if (dTex->GetType() == GSTexture::Type::DepthStencil)
+	if ((rt_format != GSTexture::Format::Invalid && rt_format != GSTexture::Format::Color) ||
+		 (ds_format != GSTexture::Format::Invalid && ds_format != GSTexture::Format::DepthStencil))
 	{
-		if (load_op == VK_ATTACHMENT_LOAD_OP_CLEAR)
-			BeginClearRenderPass(m_utility_depth_render_pass_clear, dtex_rc, dTex->GetClearDepth(), 0);
-		else
-			BeginRenderPass((load_op == VK_ATTACHMENT_LOAD_OP_DONT_CARE) ? m_utility_depth_render_pass_discard :
-																		   m_utility_depth_render_pass_load,
-				dtex_rc);
+		// integer formats, etc
+		return GetRenderPass(LookupNativeFormat(rt_format), LookupNativeFormat(ds_format), rt_load_op,
+			VK_ATTACHMENT_STORE_OP_STORE, ds_load_op, VK_ATTACHMENT_STORE_OP_DONT_CARE);
 	}
-	else if (dTex->GetFormat() == GSTexture::Format::Color)
+
+	return GetTFXRenderPass(rt_format != GSTexture::Format::Invalid, ds_format != GSTexture::Format::Invalid, false,
+		DATE_RENDER_PASS_NONE, false, false, rt_load_op, ds_load_op);
+}
+
+void GSDeviceVK::BeginRenderPassForStretchRect(const GSVector4i& dst_rc, bool allow_discard)
+{
+	GSTextureVK* const rt = m_current_render_target;
+	GSTextureVK* const ds = m_current_depth_target;
+	const GSTextureVK* rt_or_ds = rt ? rt : ds;
+
+	const GSVector4i tgt_rect = rt_or_ds->GetRect();
+	const VkAttachmentLoadOp rt_load_op = (!rt || (allow_discard && dst_rc.eq(tgt_rect))) ?
+											  VK_ATTACHMENT_LOAD_OP_DONT_CARE :
+											  GetLoadOpForTexture(rt);
+	const VkAttachmentLoadOp ds_load_op = (!ds || (allow_discard && dst_rc.eq(tgt_rect))) ?
+											  VK_ATTACHMENT_LOAD_OP_DONT_CARE :
+											  GetLoadOpForTexture(ds);
+
+	if (rt)
+		rt->SetState(GSTexture::State::Dirty);
+	if (ds)
+		ds->SetState(GSTexture::State::Dirty);
+
+	const VkRenderPass rp = GetRenderPassForStretchRect(rt ? rt->GetFormat() : GSTexture::Format::Invalid, rt_load_op,
+		ds ? ds->GetFormat() : GSTexture::Format::Invalid, ds_load_op);
+
+	// when we're clearing, we set the draw area to the whole fb, otherwise part of it will be undefined
+	if (rt_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR || ds_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR)
 	{
-		if (load_op == VK_ATTACHMENT_LOAD_OP_CLEAR)
-			BeginClearRenderPass(m_utility_color_render_pass_clear, dtex_rc, dTex->GetClearColor());
-		else
-			BeginRenderPass((load_op == VK_ATTACHMENT_LOAD_OP_DONT_CARE) ? m_utility_color_render_pass_discard :
-																		   m_utility_color_render_pass_load,
-				dtex_rc);
+		alignas(16) VkClearValue cvs[2];
+		u32 cv_count = 0;
+		if (rt)
+			GSVector4::store<true>(&cvs[cv_count++].color, GSVector4::unorm8(rt->GetClearColor()));
+		if (ds)
+			cvs[cv_count++].depthStencil = { ds->GetClearDepth(), 1 };
+
+		BeginClearRenderPass(rp, tgt_rect, cvs, std::size(cvs));
 	}
 	else
 	{
-		// integer formats, etc
-		const VkRenderPass rp = GetRenderPass(dTex->GetVkFormat(), VK_FORMAT_UNDEFINED, load_op,
-			VK_ATTACHMENT_STORE_OP_STORE, VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE);
-		if (load_op == VK_ATTACHMENT_LOAD_OP_CLEAR)
-		{
-			BeginClearRenderPass(rp, dtex_rc, dTex->GetClearColor());
-		}
-		else
-		{
-			BeginRenderPass(rp, dtex_rc);
-		}
+		BeginRenderPass(rp, tgt_rect);
 	}
 }
 
-void GSDeviceVK::DoStretchRect(GSTextureVK* sTex, const GSVector4& sRect, GSTextureVK* dTex, const GSVector4& dRect,
-	VkPipeline pipeline, bool linear, bool allow_discard)
+void GSDeviceVK::DoStretchRect(GSTextureVK* sTex, GSTextureVK* otherTarget, const GSVector4& sRect, GSTextureVK* dTex,
+	const GSVector4& dRect, VkPipeline pipeline, bool linear, bool allow_discard, bool whole_target_render_area)
 {
 	if (sTex->GetLayout() != GSTextureVK::Layout::ShaderReadOnly)
 	{
@@ -3105,25 +3116,26 @@ void GSDeviceVK::DoStretchRect(GSTextureVK* sTex, const GSVector4& sRect, GSText
 
 	const bool is_present = (!dTex);
 	const bool depth = (dTex && dTex->GetType() == GSTexture::Type::DepthStencil);
-	const GSVector2i size(is_present ? GSVector2i(GetWindowWidth(), GetWindowHeight()) : dTex->GetSize());
-	const GSVector4i dtex_rc(0, 0, size.x, size.y);
-	const GSVector4i dst_rc(GSVector4i(dRect).rintersect(dtex_rc));
+	const GSVector2i size(
+		is_present ? GSVector2i(GetWindowWidth(), GetWindowHeight()) : dTex->GetSize());
 
 	// switch rts (which might not end the render pass), so check the bounds
 	if (!is_present)
 	{
-		OMSetRenderTargets(depth ? nullptr : dTex, depth ? dTex : nullptr, dst_rc);
+		const GSVector4i dtex_rc = GSVector4i::loadh(size);
+		const GSVector4i render_area = GSVector4i(dRect).rintersect(dtex_rc);
+
+		OMSetRenderTargets(depth ? otherTarget : dTex, depth ? dTex : otherTarget, render_area);
 		if (InRenderPass() && dTex->GetState() == GSTexture::State::Cleared)
 			EndRenderPass();
+		if (!InRenderPass())
+			BeginRenderPassForStretchRect(render_area, allow_discard);
 	}
 	else
 	{
 		// this is for presenting, we don't want to screw with the viewport/scissor set by display
 		m_dirty_flags &= ~(DIRTY_FLAG_VIEWPORT | DIRTY_FLAG_SCISSOR);
 	}
-
-	if (!is_present && !InRenderPass())
-		BeginRenderPassForStretchRect(dTex, dtex_rc, dst_rc, allow_discard);
 
 	DrawStretchRect(sRect, dRect, size);
 }
@@ -3191,8 +3203,8 @@ void GSDeviceVK::UpdateCLUTTexture(
 
 	const GSVector4 dRect(0, 0, dSize, 1);
 	const ShaderConvert shader = (dSize == 16) ? ShaderConvert::CLUT_4 : ShaderConvert::CLUT_8;
-	DoStretchRect(static_cast<GSTextureVK*>(sTex), GSVector4::zero(), static_cast<GSTextureVK*>(dTex), dRect,
-		m_convert[static_cast<int>(shader)], false, true);
+	DoStretchRect(static_cast<GSTextureVK*>(sTex), nullptr, GSVector4::zero(), static_cast<GSTextureVK*>(dTex), dRect,
+		m_convert[0][static_cast<int>(shader)], false, true, false);
 }
 
 void GSDeviceVK::ConvertToIndexedTexture(
@@ -3212,8 +3224,8 @@ void GSDeviceVK::ConvertToIndexedTexture(
 
 	const ShaderConvert shader = ShaderConvert::RGBA_TO_8I;
 	const GSVector4 dRect(0, 0, dTex->GetWidth(), dTex->GetHeight());
-	DoStretchRect(static_cast<GSTextureVK*>(sTex), GSVector4::zero(), static_cast<GSTextureVK*>(dTex), dRect,
-		m_convert[static_cast<int>(shader)], false, true);
+	DoStretchRect(static_cast<GSTextureVK*>(sTex), nullptr, GSVector4::zero(), static_cast<GSTextureVK*>(dTex), dRect,
+		m_convert[0][static_cast<int>(shader)], false, true, false);
 }
 
 void GSDeviceVK::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect,
@@ -3264,8 +3276,10 @@ void GSDeviceVK::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, 
 			static_cast<GSTextureVK*>(sTex[1])->TransitionToLayout(GSTextureVK::Layout::ShaderReadOnly);
 			OMSetRenderTargets(dTex, nullptr, darea);
 			SetUtilityTexture(sTex[1], sampler);
-			BeginClearRenderPass(m_utility_color_render_pass_clear, darea, c);
-			SetPipeline(m_convert[static_cast<int>(ShaderConvert::COPY)]);
+			BeginClearRenderPass(GetTFXRenderPass(true, false, false, DATE_RENDER_PASS_NONE, false, false,
+									 VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_LOAD_OP_DONT_CARE),
+				darea, c);
+			SetPipeline(m_convert[0][static_cast<int>(ShaderConvert::COPY)]);
 			DrawStretchRect(sRect[1], PMODE.SLBG ? dRect[2] : dRect[1], dsize);
 			dTex->SetState(GSTexture::State::Dirty);
 			dcleared = true;
@@ -3274,7 +3288,7 @@ void GSDeviceVK::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, 
 
 	// Upload constant to select YUV algo
 	const GSVector2i fbsize(sTex[2] ? sTex[2]->GetSize() : GSVector2i(0, 0));
-	const GSVector4i fbarea(0, 0, fbsize.x, fbsize.y);
+	const GSVector4i fbarea = GSVector4i::loadh(fbsize);
 	if (feedback_write_2)
 	{
 		EndRenderPass();
@@ -3282,10 +3296,10 @@ void GSDeviceVK::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, 
 		if (dcleared)
 			SetUtilityTexture(dTex, sampler);
 		// sTex[2] can be sTex[0], in which case it might be cleared (e.g. Xenosaga).
-		BeginRenderPassForStretchRect(static_cast<GSTextureVK*>(sTex[2]), fbarea, GSVector4i(dRect[2]));
+		BeginRenderPassForStretchRect(GSVector4i(dRect[2]), true);
 		if (dcleared)
 		{
-			SetPipeline(m_convert[static_cast<int>(ShaderConvert::YUV)]);
+			SetPipeline(m_convert[0][static_cast<int>(ShaderConvert::YUV)]);
 			SetUtilityPushConstants(yuv_constants, sizeof(yuv_constants));
 			DrawStretchRect(full_r, dRect[2], fbsize);
 		}
@@ -3303,13 +3317,17 @@ void GSDeviceVK::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, 
 	{
 		EndRenderPass();
 		OMSetRenderTargets(dTex, nullptr, darea);
-		BeginClearRenderPass(m_utility_color_render_pass_clear, darea, c);
+		BeginClearRenderPass(GetTFXRenderPass(true, false, false, DATE_RENDER_PASS_NONE, false, false,
+								 VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_LOAD_OP_DONT_CARE),
+			darea, c);
 		dTex->SetState(GSTexture::State::Dirty);
 	}
 	else if (!InRenderPass())
 	{
 		OMSetRenderTargets(dTex, nullptr, darea);
-		BeginRenderPass(m_utility_color_render_pass_load, darea);
+		BeginRenderPass(GetTFXRenderPass(true, false, false, DATE_RENDER_PASS_NONE, false, false,
+							VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_LOAD_OP_DONT_CARE),
+			darea);
 	}
 
 	if (sTex[0] && sTex[0]->GetState() == GSTexture::State::Dirty)
@@ -3324,11 +3342,13 @@ void GSDeviceVK::DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, 
 	if (feedback_write_1)
 	{
 		EndRenderPass();
-		SetPipeline(m_convert[static_cast<int>(ShaderConvert::YUV)]);
+		SetPipeline(m_convert[0][static_cast<int>(ShaderConvert::YUV)]);
 		SetUtilityTexture(dTex, sampler);
 		SetUtilityPushConstants(yuv_constants, sizeof(yuv_constants));
 		OMSetRenderTargets(sTex[2], nullptr, fbarea);
-		BeginRenderPass(m_utility_color_render_pass_load, fbarea);
+		BeginRenderPass(GetTFXRenderPass(true, false, false, DATE_RENDER_PASS_NONE, false, false,
+							VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_LOAD_OP_DONT_CARE),
+			fbarea);
 		DrawStretchRect(full_r, dRect[2], dsize);
 	}
 
@@ -3350,7 +3370,7 @@ void GSDeviceVK::DoInterlace(GSTexture* sTex, const GSVector4& sRect, GSTexture*
 	EndRenderPass();
 	OMSetRenderTargets(dTex, nullptr, clamped_rc);
 	SetUtilityTexture(sTex, linear ? m_linear_sampler : m_point_sampler);
-	BeginRenderPassForStretchRect(static_cast<GSTextureVK*>(dTex), dTex->GetRect(), clamped_rc, false);
+	BeginRenderPassForStretchRect(clamped_rc, false);
 	SetPipeline(m_interlace[static_cast<int>(shader)]);
 	SetUtilityPushConstants(&cb, sizeof(cb));
 	DrawStretchRect(sRect, dRect, dTex->GetSize());
@@ -3366,8 +3386,7 @@ void GSDeviceVK::DoShadeBoost(GSTexture* sTex, GSTexture* dTex, const float para
 	EndRenderPass();
 	OMSetRenderTargets(dTex, nullptr, dRect);
 	SetUtilityTexture(sTex, m_point_sampler);
-	BeginRenderPass(m_utility_color_render_pass_discard, dRect);
-	dTex->SetState(GSTexture::State::Dirty);
+	BeginRenderPassForStretchRect(dRect, true);
 	SetPipeline(m_shadeboost_pipeline);
 	SetUtilityPushConstants(params, sizeof(float) * 4);
 	DrawStretchRect(sRect, GSVector4(dRect), dTex->GetSize());
@@ -3383,8 +3402,7 @@ void GSDeviceVK::DoFXAA(GSTexture* sTex, GSTexture* dTex)
 	EndRenderPass();
 	OMSetRenderTargets(dTex, nullptr, dRect);
 	SetUtilityTexture(sTex, m_linear_sampler);
-	BeginRenderPass(m_utility_color_render_pass_discard, dRect);
-	dTex->SetState(GSTexture::State::Dirty);
+	BeginRenderPassForStretchRect(dRect, true);
 	SetPipeline(m_fxaa_pipeline);
 	DrawStretchRect(sRect, GSVector4(dRect), dTex->GetSize());
 	EndRenderPass();
@@ -3850,21 +3868,8 @@ bool GSDeviceVK::CreateRenderPasses()
 		}
 	}
 
-	GET(m_utility_color_render_pass_load, rt_format, VK_FORMAT_UNDEFINED, false, false, VK_ATTACHMENT_LOAD_OP_LOAD,
-		VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_LOAD_OP_DONT_CARE);
-	GET(m_utility_color_render_pass_clear, rt_format, VK_FORMAT_UNDEFINED, false, false, VK_ATTACHMENT_LOAD_OP_CLEAR,
-		VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_LOAD_OP_DONT_CARE);
-	GET(m_utility_color_render_pass_discard, rt_format, VK_FORMAT_UNDEFINED, false, false,
-		VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_LOAD_OP_DONT_CARE);
-	GET(m_utility_depth_render_pass_load, VK_FORMAT_UNDEFINED, depth_format, false, false,
-		VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_LOAD_OP_DONT_CARE);
-	GET(m_utility_depth_render_pass_clear, VK_FORMAT_UNDEFINED, depth_format, false, false,
-		VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_LOAD_OP_DONT_CARE);
-	GET(m_utility_depth_render_pass_discard, VK_FORMAT_UNDEFINED, depth_format, false, false,
-		VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_LOAD_OP_DONT_CARE);
-
-	m_date_setup_render_pass = GetRenderPass(VK_FORMAT_UNDEFINED, depth_format, VK_ATTACHMENT_LOAD_OP_LOAD,
-		VK_ATTACHMENT_STORE_OP_STORE, VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_STORE,
+	m_date_setup_render_pass = GetRenderPass(VK_FORMAT_UNDEFINED, depth_format,
+		VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_STORE, VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_STORE,
 		m_features.stencil_buffer ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 		m_features.stencil_buffer ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE);
 	if (m_date_setup_render_pass == VK_NULL_HANDLE)
@@ -3907,6 +3912,7 @@ bool GSDeviceVK::CompileConvertPipelines()
 		const int index = static_cast<int>(i);
 
 		VkRenderPass rp;
+		VkRenderPass alt_rp = VK_NULL_HANDLE;
 		switch (i)
 		{
 			case ShaderConvert::RGBA8_TO_16_BITS:
@@ -3933,6 +3939,8 @@ bool GSDeviceVK::CompileConvertPipelines()
 				rp = GetRenderPass(LookupNativeFormat(depth ? GSTexture::Format::Invalid : GSTexture::Format::Color),
 					LookupNativeFormat(depth ? GSTexture::Format::DepthStencil : GSTexture::Format::Invalid),
 					VK_ATTACHMENT_LOAD_OP_DONT_CARE);
+				alt_rp = GetRenderPass(LookupNativeFormat(GSTexture::Format::Color),
+					LookupNativeFormat(GSTexture::Format::DepthStencil), VK_ATTACHMENT_LOAD_OP_DONT_CARE);
 			}
 			break;
 		}
@@ -3963,16 +3971,29 @@ bool GSDeviceVK::CompileConvertPipelines()
 		ScopedGuard ps_guard([this, &ps]() { vkDestroyShaderModule(m_device, ps, nullptr); });
 		gpb.SetFragmentShader(ps);
 
-		m_convert[index] = gpb.Create(m_device, g_vulkan_shader_cache->GetPipelineCache(true), false);
-		if (!m_convert[index])
+		m_convert[0][index] = gpb.Create(m_device, g_vulkan_shader_cache->GetPipelineCache(true), false);
+		if (!m_convert[0][index])
 			return false;
 
-		Vulkan::SetObjectName(m_device, m_convert[index], "Convert pipeline %d", i);
+		Vulkan::SetObjectName(m_device, m_convert[0][index], "Convert pipeline %d", i);
+
+		// create same pipeline with depth/color also enabled
+		if (alt_rp != VK_NULL_HANDLE)
+		{
+			gpb.SetRenderPass(alt_rp, 0);
+			m_convert[1][index] = gpb.Create(m_device, g_vulkan_shader_cache->GetPipelineCache(true), false);
+			if (!m_convert[1][index])
+				return false;
+
+			Vulkan::SetObjectName(m_device, m_convert[1][index], "Convert pipeline %d [alt]", i);
+		}
 
 		if (i == ShaderConvert::COPY)
 		{
 			// compile color copy pipelines
-			gpb.SetRenderPass(m_utility_color_render_pass_discard, 0);
+			gpb.SetRenderPass(GetTFXRenderPass(true, false, false, DATE_RENDER_PASS_NONE, false, false,
+								  VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_LOAD_OP_DONT_CARE),
+				0);
 			for (u32 i = 0; i < 16; i++)
 			{
 				pxAssert(!m_color_copy[i]);
@@ -4159,7 +4180,7 @@ bool GSDeviceVK::CompileInterlacePipelines()
 		if (!m_interlace[i])
 			return false;
 
-		Vulkan::SetObjectName(m_device, m_convert[i], "Interlace pipeline %d", i);
+		Vulkan::SetObjectName(m_device, m_interlace[i], "Interlace pipeline %d", i);
 	}
 
 	return true;
@@ -4211,7 +4232,7 @@ bool GSDeviceVK::CompileMergePipelines()
 		if (!m_merge[i])
 			return false;
 
-		Vulkan::SetObjectName(m_device, m_convert[i], "Merge pipeline %d", i);
+		Vulkan::SetObjectName(m_device, m_merge[i], "Merge pipeline %d", i);
 	}
 
 	return true;
@@ -4564,10 +4585,13 @@ void GSDeviceVK::DestroyResources()
 		if (it != VK_NULL_HANDLE)
 			vkDestroyPipeline(m_device, it, nullptr);
 	}
-	for (VkPipeline it : m_convert)
+	for (u32 i = 0; i < 2; i++)
 	{
-		if (it != VK_NULL_HANDLE)
-			vkDestroyPipeline(m_device, it, nullptr);
+		for (VkPipeline it : m_convert[i])
+		{
+			if (it != VK_NULL_HANDLE)
+				vkDestroyPipeline(m_device, it, nullptr);
+		}
 	}
 	for (u32 ds = 0; ds < 2; ds++)
 	{
@@ -5453,7 +5477,7 @@ void GSDeviceVK::SetupDATE(GSTexture* rt, GSTexture* ds, bool datm, const GSVect
 	SetUtilityTexture(rt, m_point_sampler);
 	OMSetRenderTargets(nullptr, ds, bbox);
 	IASetVertexBuffer(vertices, sizeof(vertices[0]), 4);
-	SetPipeline(m_convert[static_cast<int>(datm ? ShaderConvert::DATM_1 : ShaderConvert::DATM_0)]);
+	SetPipeline(m_convert[0][static_cast<int>(datm ? ShaderConvert::DATM_1 : ShaderConvert::DATM_0)]);
 	BeginClearRenderPass(m_date_setup_render_pass, bbox, 0.0f, 0);
 	if (ApplyUtilityState())
 		DrawPrimitive();
