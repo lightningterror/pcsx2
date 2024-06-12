@@ -522,7 +522,8 @@ bool GSDeviceOGL::Create(GSVSyncMode vsync_mode, bool allow_present_throttle)
 	// This extension allow FS depth to range from -1 to 1. So
 	// gl_position.z could range from [0, 1]
 	// Change depth convention
-	glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
+	if (m_features.clip_control)
+		glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
 
 	// ****************************************************************
 	// HW renderer shader
@@ -675,12 +676,6 @@ bool GSDeviceOGL::CheckFeatures(bool& buggy_pbo)
 			"GS", "GL_ARB_copy_image is not supported, this is required for the OpenGL renderer.");
 		return false;
 	}
-	if (!GLAD_GL_VERSION_4_5 && !GLAD_GL_ARB_clip_control)
-	{
-		Host::ReportFormattedErrorAsync(
-			"GS", "GL_ARB_clip_control is not supported, this is required for the OpenGL renderer.");
-		return false;
-	}
 
 	if (!GLAD_GL_ARB_viewport_array)
 	{
@@ -743,6 +738,10 @@ bool GSDeviceOGL::CheckFeatures(bool& buggy_pbo)
 	m_features.bptc_textures =
 		GLAD_GL_VERSION_4_2 || GLAD_GL_ARB_texture_compression_bptc || GLAD_GL_EXT_texture_compression_bptc;
 	m_features.prefer_new_textures = false;
+	m_features.clip_control = GLAD_GL_ARB_clip_control;
+	if (!m_features.clip_control)
+		Host::AddOSDMessage(
+			"GL_ARB_clip_control is not supported, this will cause rendering issues.", Host::OSD_ERROR_DURATION);
 	m_features.stencil_buffer = true;
 	m_features.test_and_sample_depth = m_features.texture_barrier;
 
@@ -1303,6 +1302,11 @@ std::string GSDeviceOGL::GenGlslHeader(const std::string_view entry, GLenum type
 		header += "#define HAS_FRAMEBUFFER_FETCH 1\n";
 	else
 		header += "#define HAS_FRAMEBUFFER_FETCH 0\n";
+
+	if (m_features.clip_control)
+		header += "#define HAS_CLIP_CONTROL 1\n";
+	else
+		header += "#define HAS_CLIP_CONTROL 0\n";
 
 	// Allow to puts several shader in 1 files
 	switch (type)

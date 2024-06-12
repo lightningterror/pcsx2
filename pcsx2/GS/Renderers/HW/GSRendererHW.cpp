@@ -3645,7 +3645,7 @@ void GSRendererHW::EmulateZbuffer(const GSTextureCache::Target* ds)
 		}
 		else if (!m_cached_ctx.ZBUF.ZMSK)
 		{
-			m_conf.cb_ps.TA_MaxDepth_Af.z = static_cast<float>(max_z) * 0x1p-32f;
+			m_conf.cb_ps.TA_MaxDepth_Af.z = static_cast<float>(max_z) * (g_gs_device->Features().clip_control ? 0x1p-32f : 0x1p-24f);
 			m_conf.ps.zclamp = 1;
 		}
 	}
@@ -6997,7 +6997,7 @@ bool GSRendererHW::TryTargetClear(GSTextureCache::Target* rt, GSTextureCache::Ta
 		{
 			const u32 max_z = 0xFFFFFFFF >> (GSLocalMemory::m_psm[m_cached_ctx.ZBUF.PSM].fmt * 8);
 			const u32 z = std::min(max_z, m_vertex.buff[1].XYZ.Z);
-			const float d = static_cast<float>(z) * 0x1p-32f;
+			const float d = static_cast<float>(z) * (g_gs_device->Features().clip_control ? 0x1p-32f : 0x1p-24f);
 			GL_INS("TryTargetClear(): DS at %x <= %f", ds->m_TEX0.TBP0, d);
 			g_gs_device->ClearDepth(ds->m_texture, d);
 			ds->m_dirty.clear();
